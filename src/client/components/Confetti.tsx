@@ -1,4 +1,4 @@
-const COLORS = ["#ff9500", "#34c759", "#0a84ff", "#ff2d55", "#ffcc00", "#af52de"];
+const COLORS = ["#00f0ff", "#ff2bd6", "#3dff9a", "#ffcc33", "#8f7bff", "#ffffff"];
 const PIECES = 18;
 
 /** A one-shot burst of confetti around its parent's centre; the parent must be position: relative. */
@@ -15,7 +15,7 @@ export function Confetti() {
               ["--dx" as string]: `${Math.cos(angle) * dist}px`,
               ["--dy" as string]: `${Math.sin(angle) * dist - 20}px`,
               ["--r" as string]: `${(i * 47) % 360}deg`,
-              background: COLORS[i % COLORS.length],
+              color: COLORS[i % COLORS.length],
               animationDelay: `${(i % 4) * 30}ms`,
             }}
           />

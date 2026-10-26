@@ -92,8 +92,8 @@ export const DESKS: Record<string, { x: number; y: number }> = {
   a4: { x: 1.5, y: 6 },
   a5: { x: 6, y: 6 },
   a6: { x: 10.5, y: 6 },
-  owner: { x: 12.4, y: 10.6 },
-  site: { x: 14.2, y: 4.2 },
+  owner: { x: 7.2, y: 10.6 },
+  site: { x: 12.4, y: 11.4 },
 };
 
 export interface StoryBeat {
