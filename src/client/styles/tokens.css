@@ -38,6 +38,20 @@
   --ease: cubic-bezier(0.2, 0, 0, 1);
   /* Process illustrations step slower so a person can read each explanation. */
   --t-step: 2400ms;
+
+  /* Office scene */
+  --s-floor: #e9efec;
+  --s-floor-line: #d6dfdb;
+  --s-wall-l: #cdd7d3;
+  --s-wall-r: #c1ccc8;
+  --s-desk-top: #f6f3ee;
+  --s-desk-l: #d9d2c6;
+  --s-desk-r: #c8bfb1;
+  --s-screen: #2a3532;
+  --s-screen-on: #8fd8ff;
+  --s-skin: #e6b998;
+  --s-chair: #5d6b67;
+  --s-rack: #3a4744;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -58,6 +72,18 @@
     --bad: #ff6961;
     --bad-dot: #ff453a;
     --shadow: none;
+    --s-floor: #1c2724;
+    --s-floor-line: #26332f;
+    --s-wall-l: #1f2b28;
+    --s-wall-r: #24312e;
+    --s-desk-top: #3a3631;
+    --s-desk-l: #2c2925;
+    --s-desk-r: #24211e;
+    --s-screen: #0b100f;
+    --s-screen-on: #4fa9e8;
+    --s-skin: #c99a7a;
+    --s-chair: #3b4744;
+    --s-rack: #10171a;
   }
 }
 
@@ -78,4 +104,16 @@
   --bad: #ff6961;
   --bad-dot: #ff453a;
   --shadow: none;
+  --s-floor: #1c2724;
+  --s-floor-line: #26332f;
+  --s-wall-l: #1f2b28;
+  --s-wall-r: #24312e;
+  --s-desk-top: #3a3631;
+  --s-desk-l: #2c2925;
+  --s-desk-r: #24211e;
+  --s-screen: #0b100f;
+  --s-screen-on: #4fa9e8;
+  --s-skin: #c99a7a;
+  --s-chair: #3b4744;
+  --s-rack: #10171a;
 }

@@ -8,7 +8,10 @@ function CountUp({ value, decimals }: { value: number; decimals: number }) {
   const reduced = useReducedMotion();
   const [shown, setShown] = useState(reduced ? value : 0);
   useEffect(() => {
-    if (reduced) return setShown(value);
+    if (reduced) {
+      setShown(value);
+      return;
+    }
     let frame = 0;
     const start = performance.now();
     const tick = (now: number) => {

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { roleById } from "../../shared/roles";
+import { OfficeScene } from "../components/OfficeScene";
 import { ProcessFlow } from "../components/ProcessFlow";
 import { Sheet } from "../components/Sheet";
 import { DEMO_AGENTS, DEMO_ORG, type DemoAgent } from "../demo";
@@ -16,9 +17,13 @@ export function Office() {
       <header className="page-head">
         <h1>Офис</h1>
         <p className="muted">
-          Цель: {DEMO_ORG.goal}. Сейчас работают {busy} из {DEMO_AGENTS.length}. Нажмите на сотрудника, чтобы увидеть, что он делает.
+          Цель: {DEMO_ORG.goal}. Сейчас работают {busy} из {DEMO_AGENTS.length}. Ниже видно, как задача проходит через команду. Нажмите на любого сотрудника, чтобы увидеть его работу по шагам.
         </p>
       </header>
+
+      <OfficeScene onPick={setOpen} />
+
+      <h2 style={{ marginBottom: 12 }}>Кто чем занят</h2>
 
       <div className="grid">
         {DEMO_AGENTS.map((a) => {

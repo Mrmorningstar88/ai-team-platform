@@ -54,12 +54,17 @@ export function App() {
         ))}
       </nav>
       <main className="main">
-        {tab === "office" && <Office />}
-        {tab === "chat" && <Chat />}
+        {/* Keyed by tab so each screen animates in when opened. */}
+        <div className="page" key={tab}>
+          {tab === "office" && <Office />}
+          {tab === "chat" && <Chat />}
+          {tab === "reports" && <Reports />}
+          {tab === "team" && <Team />}
+        </div>
         {/* Kept mounted so decisions survive switching tabs. */}
-        <div hidden={tab !== "approvals"}><Approvals onCountChange={setPending} /></div>
-        {tab === "reports" && <Reports />}
-        {tab === "team" && <Team />}
+        <div className={tab === "approvals" ? "page" : undefined} hidden={tab !== "approvals"}>
+          <Approvals onCountChange={setPending} />
+        </div>
       </main>
     </div>
   );

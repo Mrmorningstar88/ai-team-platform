@@ -83,3 +83,37 @@ export const DEMO_MESSAGES: DemoMessage[] = [
   { author: "owner", body: "Что сейчас самое важное?" },
   { author: "ceo", body: "Страницы рынков: они приносят 70% переходов. SEO уже подготовил новые заголовки, техлид их проверяет." },
 ];
+
+/** Where each member of the demo office sits, in floor tiles. "owner" and "site" are fixed spots. */
+export const DESKS: Record<string, { x: number; y: number }> = {
+  a1: { x: 1.5, y: 1.5 },
+  a2: { x: 6, y: 1.5 },
+  a3: { x: 10.5, y: 1.5 },
+  a4: { x: 1.5, y: 6 },
+  a5: { x: 6, y: 6 },
+  a6: { x: 10.5, y: 6 },
+  owner: { x: 12.4, y: 10.6 },
+  site: { x: 14.2, y: 4.2 },
+};
+
+export interface StoryBeat {
+  from: string;
+  to: string;
+  /** What travels, shown on the envelope's tag. */
+  item: string;
+  /** What the sender says while it works. */
+  says: string;
+  /** Plain explanation shown under the office. */
+  explain: string;
+}
+
+/** One full loop of the office: a change goes from idea to the live site, then results come back. */
+export const STORY: StoryBeat[] = [
+  { from: "a1", to: "a4", item: "Задача", says: "Улучши заголовки рынков", explain: "CEO видит, что страницы рынков дают 70% переходов, и поручает SEO улучшить их заголовки." },
+  { from: "a4", to: "a2", item: "Правка", says: "Готово, проверь", explain: "SEO переписал 12 заголовков и отдаёт правку техлиду. Сам он на сайт ничего не публикует." },
+  { from: "a2", to: "a3", item: "Тест", says: "Проверь на сайте", explain: "Техлид прочитал код и просит тестировщика пройти страницы как обычный посетитель." },
+  { from: "a3", to: "a2", item: "Всё ок ✓", says: "Ошибок нет", explain: "Тестировщик открыл страницы с телефона и компьютера: всё работает, ошибок нет." },
+  { from: "a2", to: "owner", item: "На одобрение", says: "Можно публиковать", explain: "Проверенная правка попадает в вашу ежедневную ссылку. Без вашего «да» сайт не меняется." },
+  { from: "owner", to: "site", item: "Одобрено", says: "Да, публикуем", explain: "Вы нажали «Одобрить», и правка сама уходит на сайт." },
+  { from: "a6", to: "a1", item: "+18% кликов", says: "Есть результат", explain: "Через день аналитик считает переходы и сообщает CEO, что правка сработала." },
+];
