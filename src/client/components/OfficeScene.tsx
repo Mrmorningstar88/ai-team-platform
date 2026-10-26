@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { DEMO_AGENTS, DESKS, STORY, type DemoAgent } from "../demo";
+import { type CSSProperties, type ReactNode } from "react";
+import { DEMO_AGENTS, DESKS, type DemoAgent } from "../demo";
+import { StoryPanel, useStoryClock } from "./story";
 import { useMediaQuery } from "./useMediaQuery";
-import { useReducedMotion } from "./useReducedMotion";
 
 // Isometric projection: one floor tile is 64×32 px on screen.
 const TW = 32;
@@ -9,12 +9,6 @@ const TH = 16;
 const ROOM_W = 15;
 const ROOM_D = 12;
 const WALL_H = 80;
-
-// One beat: the sender works and talks, the item flies, the receiver catches it.
-const PREP_MS = 1100;
-const FLY_MS = 1700;
-const LAND_MS = 1300;
-const BEAT_MS = PREP_MS + FLY_MS + LAND_MS;
 
 /** Neon colour per role: desk edge, hologram, visor and name tag. */
 const ROLE_NEON: Record<string, string> = {
@@ -213,44 +207,11 @@ interface Props {
  * words. Phones get a portrait corridor layout instead of the wide room.
  */
 export function OfficeScene({ onPick }: Props) {
-  const reduced = useReducedMotion();
   const phone = useMediaQuery("(max-width: 760px)");
   const layout = phone ? PHONE : DESKTOP;
   const desks = layout.desks;
-  const [beat, setBeat] = useState(0);
-  const [elapsed, setElapsed] = useState(reduced ? BEAT_MS : 0);
-  const [playing, setPlaying] = useState(true);
-  const startRef = useRef(0);
-
-  useEffect(() => {
-    if (reduced || !playing) return;
-    let frame = 0;
-    // elapsed is read once on (re)start so a pause resumes where it stopped.
-    startRef.current = performance.now() - elapsed;
-    const tick = (now: number) => {
-      const t = now - startRef.current;
-      if (t >= BEAT_MS) {
-        setBeat((b) => (b + 1) % STORY.length);
-        startRef.current = now;
-        setElapsed(0);
-      } else {
-        setElapsed(t);
-      }
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [reduced, playing]);
-
-  function jump(i: number) {
-    setBeat(i);
-    setElapsed(reduced ? BEAT_MS : 0);
-    startRef.current = performance.now();
-  }
-
-  const story = STORY[beat]!;
-  const phase = elapsed < PREP_MS ? "prep" : elapsed < PREP_MS + FLY_MS ? "fly" : "land";
-  const flyT = phase === "prep" ? 0 : phase === "fly" ? (elapsed - PREP_MS) / FLY_MS : 1;
+  const clock = useStoryClock();
+  const { story, phase, flyT } = clock;
   const [fx, fy] = headOf(desks, story.from);
   const [tx, ty] = headOf(desks, story.to);
   const at = (t: number): Pt => {
@@ -378,38 +339,7 @@ export function OfficeScene({ onPick }: Props) {
         </svg>
       </div>
 
-      <div className="story">
-        <div className="story-dots" role="tablist" aria-label="Шаги истории">
-          {STORY.map((s, i) => (
-            <button
-              key={i}
-              type="button"
-              role="tab"
-              aria-selected={i === beat}
-              aria-label={`Шаг ${i + 1}: ${s.item}`}
-              className={`story-dot ${i < beat ? "done" : ""} ${i === beat ? "active" : ""}`}
-              onClick={() => jump(i)}
-            >
-              {i === beat && !reduced && (
-                <span className="story-dot-fill" style={{ transform: `scaleX(${elapsed / BEAT_MS})` }} />
-              )}
-            </button>
-          ))}
-        </div>
-        <div className="story-text" key={beat} aria-live="polite">
-          <strong>ШАГ {beat + 1}/{STORY.length}</strong> {story.explain}
-        </div>
-        <div className="flow-controls">
-          {!reduced && (
-            <button type="button" className="btn btn-plain" onClick={() => setPlaying((p) => !p)}>
-              {playing ? "Пауза" : "Смотреть"}
-            </button>
-          )}
-          <button type="button" className="btn btn-plain" onClick={() => jump((beat + 1) % STORY.length)}>
-            Следующий шаг →
-          </button>
-        </div>
-      </div>
+      <StoryPanel clock={clock} />
     </section>
   );
 }
