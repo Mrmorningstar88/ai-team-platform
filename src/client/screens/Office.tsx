@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { roleById } from "../../shared/roles";
-import { FlowScene } from "../components/FlowScene";
 import { OfficeScene } from "../components/OfficeScene";
 import { ProcessFlow } from "../components/ProcessFlow";
 import { Sheet } from "../components/Sheet";
@@ -10,7 +9,6 @@ const STATUS_TEXT = { working: "Работает", waiting: "Ждёт", idle: "�
 
 export function Office() {
   const [open, setOpen] = useState<DemoAgent | null>(null);
-  const [view, setView] = useState<"flow" | "office">("flow");
   const role = open ? roleById(open.role) : undefined;
   const busy = DEMO_AGENTS.filter((a) => a.status === "working").length;
 
@@ -23,12 +21,7 @@ export function Office() {
         </p>
       </header>
 
-      <div className="view-switch" role="tablist" aria-label="Как показать команду">
-        <button type="button" role="tab" aria-selected={view === "flow"} onClick={() => setView("flow")}>Поток</button>
-        <button type="button" role="tab" aria-selected={view === "office"} onClick={() => setView("office")}>Офис</button>
-      </div>
-
-      {view === "flow" ? <FlowScene onPick={setOpen} /> : <OfficeScene onPick={setOpen} />}
+      <OfficeScene onPick={setOpen} />
 
       <h2 style={{ marginBottom: 12 }}>Кто чем занят</h2>
 
