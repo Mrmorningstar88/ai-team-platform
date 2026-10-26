@@ -1,0 +1,216 @@
+* { box-sizing: border-box; }
+
+html, body { margin: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--text-size);
+  line-height: var(--line);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { line-height: 1.25; margin: 0; }
+h1 { font-size: 28px; font-weight: 700; }
+h2 { font-size: 20px; font-weight: 600; }
+h3 { font-size: 17px; font-weight: 600; }
+p { margin: 0; }
+.muted { color: var(--text-2); }
+.small { font-size: 15px; }
+
+button { font: inherit; color: inherit; }
+
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- Shell ---------- */
+
+.shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100dvh; }
+
+.nav {
+  position: sticky; top: 0; height: 100dvh;
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 24px 12px; background: var(--surface); border-right: 1px solid var(--separator);
+}
+.nav-brand { display: flex; align-items: center; gap: 10px; padding: 0 12px 20px; font-weight: 700; }
+.nav-brand-mark {
+  width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center;
+  background: var(--accent); color: var(--on-accent); font-size: 18px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 12px; min-height: var(--tap);
+  padding: 0 12px; border: 0; border-radius: var(--radius-sm); background: none;
+  text-align: left; cursor: pointer;
+  transition: background var(--t-press) var(--ease);
+}
+.nav-item:hover { background: var(--surface-2); }
+.nav-item[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.nav-icon { width: 24px; text-align: center; }
+.nav-badge {
+  margin-left: auto; min-width: 22px; padding: 0 6px; border-radius: 11px;
+  background: var(--accent); color: var(--on-accent); font-size: 13px; font-weight: 600; text-align: center;
+}
+
+.main { padding: 32px clamp(16px, 4vw, 48px) 96px; max-width: 1080px; width: 100%; }
+.page-head { display: flex; flex-direction: column; gap: 6px; margin-bottom: 24px; }
+
+@media (max-width: 760px) {
+  .shell { grid-template-columns: 1fr; }
+  .nav {
+    position: fixed; inset: auto 0 0 0; height: auto; z-index: 10;
+    flex-direction: row; justify-content: space-around; gap: 0;
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+    border-right: 0; border-top: 1px solid var(--separator);
+  }
+  .nav-brand { display: none; }
+  .nav-item { flex-direction: column; gap: 0; padding: 4px; font-size: 11px; min-width: var(--tap); }
+  .nav-icon { font-size: 22px; }
+  .nav-badge { position: absolute; margin: 0 0 0 18px; min-width: 18px; font-size: 11px; }
+  .main { padding: 20px 16px 104px; }
+}
+
+/* ---------- Building blocks ---------- */
+
+.card {
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 20px;
+}
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.stack { display: flex; flex-direction: column; gap: 16px; }
+.row { display: flex; align-items: center; gap: 12px; }
+
+.btn {
+  min-height: var(--tap); padding: 0 20px; border-radius: 12px; border: 0;
+  font-weight: 600; cursor: pointer;
+  transition: transform var(--t-press) var(--ease), background var(--t-press) var(--ease), opacity var(--t-press);
+}
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.btn-primary { background: var(--accent); color: var(--on-accent); }
+.btn-secondary { background: var(--accent-soft); color: var(--accent); }
+.btn-plain { background: none; color: var(--accent); padding: 0 8px; }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px;
+  background: var(--surface-2); font-size: 13px; font-weight: 600; color: var(--text-2);
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dot-working { background: var(--good-dot); }
+.dot-waiting { background: var(--warn-dot); }
+.dot-idle { background: var(--text-2); }
+
+/* ---------- Office ---------- */
+
+.desk { display: flex; flex-direction: column; gap: 14px; cursor: pointer; border: 0; text-align: left; width: 100%;
+  transition: transform var(--t-card) var(--ease), box-shadow var(--t-card) var(--ease); }
+.desk:hover { transform: translateY(-2px); }
+.avatar {
+  position: relative; width: 52px; height: 52px; border-radius: 16px; flex: none;
+  display: grid; place-items: center; font-size: 26px; background: var(--surface-2);
+}
+.avatar.working::after {
+  content: ""; position: absolute; inset: -4px; border-radius: 20px;
+  border: 2px solid var(--good-dot); animation: pulse 1.6s var(--ease) infinite;
+}
+.avatar.waiting::after {
+  content: ""; position: absolute; inset: -4px; border-radius: 20px;
+  border: 2px dashed var(--warn-dot); animation: spin 6s linear infinite;
+}
+@keyframes pulse { 0% { opacity: 0.9; transform: scale(1); } 100% { opacity: 0; transform: scale(1.25); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.typing { display: inline-flex; gap: 4px; align-items: center; }
+.typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-2); animation: blink 1.2s infinite; }
+.typing i:nth-child(2) { animation-delay: 0.2s; }
+.typing i:nth-child(3) { animation-delay: 0.4s; }
+@keyframes blink { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+
+/* ---------- Process flow (the animated explainer) ---------- */
+
+.flow { display: flex; flex-direction: column; gap: 16px; }
+.flow-track { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; align-items: start; }
+.flow-line { position: absolute; top: 22px; left: 0; right: 0; height: 3px; border-radius: 2px; background: var(--separator); }
+.flow-line-fill {
+  position: absolute; top: 22px; left: 0; height: 3px; border-radius: 2px; background: var(--accent);
+  transition: width var(--t-card) var(--ease);
+}
+.flow-token {
+  position: absolute; top: 12px; width: 22px; height: 22px; margin-left: -11px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 6px var(--accent-soft);
+  transition: left 700ms var(--ease);
+}
+.flow-stop { position: relative; background: none; border: 0; cursor: pointer; color: inherit; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding: 0 4px; }
+.flow-icon {
+  width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-size: 20px;
+  position: relative; z-index: 1;
+  background: var(--surface); border: 2px solid var(--separator);
+  transition: border-color var(--t-card) var(--ease), transform var(--t-card) var(--ease), background var(--t-card);
+}
+.flow-stop.done .flow-icon { border-color: var(--accent); }
+/* Opaque surface plus an inset tint, so the travelling token disappears behind the icon. */
+.flow-stop.active .flow-icon { border-color: var(--accent); box-shadow: inset 0 0 0 30px var(--accent-soft); transform: scale(1.12); }
+.flow-label { font-size: 13px; font-weight: 600; color: var(--text-2); transition: color var(--t-card); }
+.flow-stop.active .flow-label { color: var(--text); }
+.flow-explain {
+  min-height: 72px; padding: 14px 16px; border-radius: var(--radius-sm); background: var(--surface-2);
+  animation: rise var(--t-card) var(--ease);
+}
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.flow-controls { display: flex; gap: 8px; align-items: center; }
+.flow-static { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.flow-static li { display: flex; gap: 12px; }
+
+/* ---------- Chat ---------- */
+
+.chat { display: flex; flex-direction: column; gap: 10px; min-height: 50vh; }
+.bubble {
+  max-width: min(560px, 85%); padding: 10px 14px; border-radius: 18px; background: var(--surface);
+  box-shadow: var(--shadow); animation: rise var(--t-card) var(--ease);
+}
+.bubble.owner { align-self: flex-end; background: var(--accent); color: var(--on-accent); }
+.composer { position: sticky; bottom: 16px; display: flex; gap: 8px; margin-top: 16px; }
+.composer input {
+  flex: 1; min-height: var(--tap); padding: 0 16px; border-radius: 22px;
+  border: 1px solid var(--separator); background: var(--surface); color: var(--text); font: inherit;
+}
+@media (max-width: 760px) { .composer { bottom: 88px; } }
+
+/* ---------- Approvals ---------- */
+
+.approval { transition: opacity var(--t-card) var(--ease), transform var(--t-card) var(--ease); }
+.approval.leaving { opacity: 0; transform: translateX(24px) scale(0.98); }
+.diff { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.diff > div { padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); font-size: 15px; }
+@media (max-width: 520px) { .diff { grid-template-columns: 1fr; } }
+.check-burst {
+  display: grid; place-items: center; width: 64px; height: 64px; margin: 0 auto; border-radius: 50%;
+  background: var(--good-dot); color: #fff; font-size: 32px; animation: pop var(--t-dialog) var(--ease);
+}
+@keyframes pop { from { transform: scale(0.4); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ---------- Reports ---------- */
+
+.kpi-value { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.delta-up { color: var(--good); font-weight: 600; }
+.delta-down { color: var(--bad); font-weight: 600; }
+.bars { display: flex; align-items: flex-end; gap: 6px; height: 72px; }
+.bar { flex: 1; border-radius: 4px 4px 0 0; background: var(--accent); transform-origin: bottom; animation: grow 600ms var(--ease) both; }
+@keyframes grow { from { transform: scaleY(0); } }
+
+/* ---------- Sheet (dialog) ---------- */
+
+.scrim { position: fixed; inset: 0; z-index: 20; display: grid; place-items: end center; background: rgba(0, 0, 0, 0.35);
+  animation: fade var(--t-dialog) var(--ease); }
+.sheet {
+  width: min(640px, 100%); max-height: 88dvh; overflow: auto; padding: 24px;
+  border-radius: 20px 20px 0 0; background: var(--surface);
+  animation: slide-up var(--t-dialog) var(--ease);
+}
+@media (min-width: 761px) { .scrim { place-items: center; } .sheet { border-radius: 20px; } }
+@keyframes fade { from { opacity: 0; } }
+@keyframes slide-up { from { transform: translateY(32px); opacity: 0; } }
+
+/* Reduced motion: keep state changes visible, drop movement (rulebook §03). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
