@@ -1,0 +1,119 @@
+/*
+ * Design tokens. Colors follow Apple HIG system colors with light and dark
+ * variants; every text pair is checked against WCAG AA 4.5:1 (UI rulebook §03).
+ * Replace these values when the design-system repo is connected; keep the roles.
+ */
+:root {
+  color-scheme: light dark;
+
+  --bg: #f2f2f7;              /* systemGroupedBackground */
+  --surface: #ffffff;         /* secondarySystemGroupedBackground */
+  --surface-2: #f2f2f7;
+  --separator: rgba(60, 60, 67, 0.18);
+  --text: #000000;            /* label */
+  --text-2: #6c6c70;          /* secondaryLabel, opaque: 5.2:1 on white */
+  --accent: #0066d6;          /* systemBlue, deepened: 5.4:1 with white */
+  --on-accent: #ffffff;
+  --accent-soft: rgba(0, 122, 255, 0.12);
+  --good: #1e7b34;            /* text-safe systemGreen */
+  --good-dot: #34c759;
+  --warn: #c93400;            /* text-safe systemOrange */
+  --warn-dot: #ff9500;
+  --bad: #d70015;
+  --bad-dot: #ff3b30;
+
+  --radius: 14px;
+  --radius-sm: 10px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.06);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
+  --text-size: 17px;          /* rulebook: body 16–18px */
+  --line: 1.5;
+  --tap: 44px;                /* rulebook: tap targets 44×44 */
+
+  /* Motion (rulebook §03): press 80–120ms, menu 150–220, card 180–280, dialog 220–320. */
+  --t-press: 100ms;
+  --t-menu: 180ms;
+  --t-card: 240ms;
+  --t-dialog: 280ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  /* Process illustrations step slower so a person can read each explanation. */
+  --t-step: 2400ms;
+
+  /* Office scene */
+  --s-floor: #e9efec;
+  --s-floor-line: #d6dfdb;
+  --s-wall-l: #cdd7d3;
+  --s-wall-r: #c1ccc8;
+  --s-desk-top: #f6f3ee;
+  --s-desk-l: #d9d2c6;
+  --s-desk-r: #c8bfb1;
+  --s-screen: #2a3532;
+  --s-screen-on: #8fd8ff;
+  --s-skin: #e6b998;
+  --s-chair: #5d6b67;
+  --s-rack: #3a4744;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #000000;
+    --surface: #1c1c1e;
+    --surface-2: #2c2c2e;
+    --separator: rgba(84, 84, 88, 0.6);
+    --text: #ffffff;
+    --text-2: #aeaeb2;
+    --accent: #0a84ff;
+    --on-accent: #000000;     /* 5.8:1; white would be 3.6:1 */
+    --accent-soft: rgba(10, 132, 255, 0.18);
+    --good: #30d158;
+    --good-dot: #30d158;
+    --warn: #ff9f0a;
+    --warn-dot: #ff9f0a;
+    --bad: #ff6961;
+    --bad-dot: #ff453a;
+    --shadow: none;
+    --s-floor: #1c2724;
+    --s-floor-line: #26332f;
+    --s-wall-l: #1f2b28;
+    --s-wall-r: #24312e;
+    --s-desk-top: #3a3631;
+    --s-desk-l: #2c2925;
+    --s-desk-r: #24211e;
+    --s-screen: #0b100f;
+    --s-screen-on: #4fa9e8;
+    --s-skin: #c99a7a;
+    --s-chair: #3b4744;
+    --s-rack: #10171a;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #000000;
+  --surface: #1c1c1e;
+  --surface-2: #2c2c2e;
+  --separator: rgba(84, 84, 88, 0.6);
+  --text: #ffffff;
+  --text-2: #aeaeb2;
+  --accent: #0a84ff;
+  --on-accent: #000000;
+  --accent-soft: rgba(10, 132, 255, 0.18);
+  --good: #30d158;
+  --good-dot: #30d158;
+  --warn: #ff9f0a;
+  --warn-dot: #ff9f0a;
+  --bad: #ff6961;
+  --bad-dot: #ff453a;
+  --shadow: none;
+  --s-floor: #1c2724;
+  --s-floor-line: #26332f;
+  --s-wall-l: #1f2b28;
+  --s-wall-r: #24312e;
+  --s-desk-top: #3a3631;
+  --s-desk-l: #2c2925;
+  --s-desk-r: #24211e;
+  --s-screen: #0b100f;
+  --s-screen-on: #4fa9e8;
+  --s-skin: #c99a7a;
+  --s-chair: #3b4744;
+  --s-rack: #10171a;
+}
