@@ -1,5 +1,5 @@
-// Signed session cookie: "<userId>.<expiresAtMs>.<hmac>". Login routes that
-// issue it (Google / Apple OAuth) come in a follow-up change.
+// Signed session cookie: "<userId>.<expiresAtMs>.<hmac>", issued by the
+// email + password routes in index.ts. Google / Apple sign-in can reuse it.
 
 const encoder = new TextEncoder();
 

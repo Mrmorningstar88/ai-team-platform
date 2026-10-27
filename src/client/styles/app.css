@@ -360,3 +360,40 @@ button { font: inherit; color: inherit; }
 .delegate-caption { grid-column: 1 / -1; }
 @keyframes deliver { from { left: 0; } to { left: calc(100% - 24px); } }
 @keyframes catch-in { 0% { opacity: 0.35; transform: scale(0.9); } 60% { opacity: 1; transform: scale(1.08); box-shadow: 0 0 0 3px var(--good-dot); } 100% { opacity: 1; transform: none; } }
+
+/* ---------- Sign-in and sign-up ---------- */
+
+.auth {
+  min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 16px; padding: 32px 16px calc(32px + env(safe-area-inset-bottom));
+}
+.auth-card, .auth-explain { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 16px; }
+.auth-brand { display: flex; align-items: center; gap: 12px; }
+.auth-form { display: flex; flex-direction: column; gap: 14px; animation: auth-in var(--t-card) var(--ease); }
+@keyframes auth-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+.segmented { display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 12px; background: var(--surface-2); }
+.segmented button {
+  min-height: var(--tap); border: 0; border-radius: 10px; background: none; cursor: pointer; font-weight: 600; color: var(--text-2);
+  transition: background var(--t-menu) var(--ease), color var(--t-menu) var(--ease);
+}
+.segmented button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > span { font-weight: 600; font-size: 15px; }
+.field input {
+  min-height: var(--tap); padding: 0 14px; border-radius: 12px; font: inherit; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--separator);
+  transition: border-color var(--t-press) var(--ease);
+}
+.field input:focus { border-color: var(--accent); }
+.field small { font-size: 13px; }
+
+.auth-error { color: var(--bad); font-size: 15px; animation: auth-in var(--t-card) var(--ease); }
+
+.nav-signout { margin-top: auto; color: var(--text-2); }
+@media (max-width: 760px) { .nav-signout { margin-top: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-form, .auth-error { animation: none; }
+}

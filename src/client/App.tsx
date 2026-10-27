@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { DEMO_APPROVALS, DEMO_ORG } from "./demo";
+import { getMe, logout, type Me } from "./api";
+import { DEMO_APPROVALS } from "./demo";
 import { Approvals } from "./screens/Approvals";
+import { Auth } from "./screens/Auth";
 import { Chat } from "./screens/Chat";
 import { Office } from "./screens/Office";
 import { Reports } from "./screens/Reports";
@@ -22,7 +24,39 @@ function tabFromHash(): TabId {
   return TABS.some((t) => t.id === id) ? (id as TabId) : "office";
 }
 
+/** Shows the sign-in screen until the server confirms a session. */
 export function App() {
+  const [me, setMe] = useState<Me | null | undefined>(undefined);
+  const [notice, setNotice] = useState<string>();
+
+  useEffect(() => {
+    void getMe().then((r) => {
+      if (r.ok) return setMe(r.data);
+      if (r.error === "no_database") setNotice("Сервер ещё не подключён к базе данных. Владельцу нужно добавить базу D1 в настройках Cloudflare.");
+      setMe(null);
+    });
+  }, []);
+
+  if (me === undefined) {
+    return (
+      <div className="auth" aria-busy="true">
+        <span className="typing" aria-label="Загрузка"><i /><i /><i /></span>
+      </div>
+    );
+  }
+  if (me === null) return <Auth onSignedIn={setMe} notice={notice} />;
+  return (
+    <Workspace
+      me={me}
+      onSignOut={async () => {
+        await logout();
+        setMe(null);
+      }}
+    />
+  );
+}
+
+function Workspace({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   const [tab, setTab] = useState<TabId>(tabFromHash);
   const [pending, setPending] = useState(DEMO_APPROVALS.length);
 
@@ -37,7 +71,7 @@ export function App() {
       <nav className="nav" aria-label="Разделы">
         <div className="nav-brand">
           <span className="nav-brand-mark" aria-hidden>◎</span>
-          <span>{DEMO_ORG.name}</span>
+          <span>{me.orgs[0]?.name ?? me.user.name}</span>
         </div>
         {TABS.map((t) => (
           <button
@@ -52,6 +86,10 @@ export function App() {
             {t.id === "approvals" && pending > 0 && <span className="nav-badge" aria-label={`${pending} ждут`}>{pending}</span>}
           </button>
         ))}
+        <button type="button" className="nav-item nav-signout" onClick={onSignOut}>
+          <span className="nav-icon" aria-hidden>↩︎</span>
+          <span>Выйти</span>
+        </button>
       </nav>
       <main className="main">
         {/* Keyed by tab so each screen animates in when opened. */}
