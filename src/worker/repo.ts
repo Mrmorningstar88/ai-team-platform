@@ -53,16 +53,29 @@ export async function decideApproval(
 
 export async function listMessages(db: D1Database, orgId: string, limit = 50): Promise<MessageRow[]> {
   const { results } = await db
-    .prepare("SELECT id, author, body, created_at FROM messages WHERE org_id = ? ORDER BY created_at DESC, id DESC LIMIT ?")
+    // rowid keeps the order messages were written in, even within one second.
+    .prepare("SELECT id, author, body, created_at FROM messages WHERE org_id = ? ORDER BY rowid DESC LIMIT ?")
     .bind(orgId, limit)
     .all<MessageRow>();
   return results.reverse();
 }
 
 export async function addOwnerMessage(db: D1Database, orgId: string, body: string): Promise<string> {
+  return addMessage(db, orgId, "owner", body);
+}
+
+export async function addMessage(db: D1Database, orgId: string, author: MessageRow["author"], body: string): Promise<string> {
   const id = crypto.randomUUID();
-  await db.prepare("INSERT INTO messages (id, org_id, author, body) VALUES (?, ?, 'owner', ?)").bind(id, orgId, body).run();
+  await db.prepare("INSERT INTO messages (id, org_id, author, body) VALUES (?, ?, ?, ?)").bind(id, orgId, author, body).run();
   return id;
+}
+
+export async function countRecentOwnerMessages(db: D1Database, orgId: string, minutes: number): Promise<number> {
+  const row = await db
+    .prepare("SELECT COUNT(*) AS n FROM messages WHERE org_id = ? AND author = 'owner' AND created_at > datetime('now', ?)")
+    .bind(orgId, `-${minutes} minutes`)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
 }
 
 // ---- Accounts: users, organizations and sign-in bookkeeping ----
@@ -229,7 +242,12 @@ export interface FeedRow { id: string; repo: string; project: string; payload: s
 /** Stores the latest status a repository reported for one project, replacing the previous one. */
 export async function saveTeamFeed(db: D1Database, repo: string, input: TeamFeedInput, nowMs: number): Promise<string> {
   const id = `${repo}#${input.project}`;
-  const payload = JSON.stringify({ agents: input.agents, reports: input.reports });
+  let tasks = input.tasks;
+  if (!tasks) {
+    const prev = await db.prepare("SELECT payload FROM team_feeds WHERE id = ?").bind(id).first<{ payload: string }>();
+    tasks = prev ? ((JSON.parse(prev.payload) as { tasks?: TeamFeedInput["tasks"] }).tasks ?? []) : [];
+  }
+  const payload = JSON.stringify({ goal: input.goal, agents: input.agents, reports: input.reports, tasks });
   await db
     .prepare(
       `INSERT INTO team_feeds (id, repo, project, owner_email, payload, updated_ms) VALUES (?, ?, ?, ?, ?, ?)
@@ -275,5 +293,25 @@ export async function listUnlinkedOwnerFeeds(db: D1Database, userId: string, ema
     )
     .bind(email, userId)
     .all<{ id: string; project: string }>();
+  return results;
+}
+
+/** Renames a project. Callers check that the user owns it. */
+export async function renameOrg(db: D1Database, orgId: string, userId: string, name: string): Promise<void> {
+  await db.batch([
+    db.prepare("UPDATE orgs SET name = ? WHERE id = ?").bind(name, orgId),
+    db.prepare("INSERT INTO audit_log (id, org_id, actor, action) VALUES (?, ?, ?, 'org:renamed')").bind(crypto.randomUUID(), orgId, `user:${userId}`),
+  ]);
+}
+
+/** The user's projects that show a team from GitHub, with that team's project name. */
+export async function listLinkedOrgs(db: D1Database, userId: string): Promise<{ id: string; name: string; project: string }[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT o.id, o.name, f.project FROM memberships m JOIN orgs o ON o.id = m.org_id
+       JOIN org_feeds l ON l.org_id = o.id JOIN team_feeds f ON f.id = l.feed_id WHERE m.user_id = ?`,
+    )
+    .bind(userId)
+    .all<{ id: string; name: string; project: string }>();
   return results;
 }

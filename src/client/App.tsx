@@ -143,8 +143,8 @@ function Workspace({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         />
         {/* Keyed by tab so each screen animates in when opened. */}
         <div className="page" key={`${tab}-${org?.id}`}>
-          {tab === "office" && org && <Office org={org} />}
-          {tab === "chat" && <Chat />}
+          {tab === "office" && org && <Office org={org} onRenamed={(o) => setOrgs((list) => list.map((x) => (x.id === o.id ? o : x)))} />}
+          {tab === "chat" && org && <Chat org={org} />}
           {tab === "reports" && org && <Reports org={org} />}
           {tab === "team" && <Team />}
         </div>

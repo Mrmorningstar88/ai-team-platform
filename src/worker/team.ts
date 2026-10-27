@@ -18,11 +18,26 @@ export interface TeamMember {
 
 export interface TeamReport { title: string; summary: string; link: string; updated: string }
 
-export interface TeamFeedInput { project: string; owner_email: string; agents: TeamMember[]; reports: TeamReport[] }
+/** A backlog item: what the team was asked to do and where it stands. */
+export type TaskStatus = "new" | "running" | "done" | "failed";
+export interface TeamTask { title: string; status: TaskStatus; link: string; updated: string }
+
+export interface TeamFeedInput {
+  project: string;
+  owner_email: string;
+  /** The project's goal in the owner's words, so the CEO knows what it is working towards. */
+  goal: string;
+  agents: TeamMember[];
+  reports: TeamReport[];
+  /** Missing when the team couldn't read its queue this time; the last known backlog is kept. */
+  tasks?: TeamTask[];
+}
 
 const STATUSES: TeamStatus[] = ["working", "done", "error", "waiting", "idle", "planned"];
 const MAX_AGENTS = 40;
 const MAX_REPORTS = 20;
+const MAX_TASKS = 30;
+const TASK_STATUSES: TaskStatus[] = ["new", "running", "done", "failed"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -70,6 +85,18 @@ function report(v: unknown): TeamReport | null {
   return r as TeamReport;
 }
 
+function task(v: unknown): TeamTask | null {
+  if (!isObj(v)) return null;
+  const t = {
+    title: text(v.title, 200),
+    status: TASK_STATUSES.includes(v.status as TaskStatus) ? (v.status as TaskStatus) : undefined,
+    link: link(v.link),
+    updated: text(v.updated, 40),
+  };
+  if (Object.values(t).some((x) => x === undefined) || !t.title) return null;
+  return t as TeamTask;
+}
+
 /** The validated feed, or null when anything in it is malformed. */
 export function parseTeamFeed(body: unknown): TeamFeedInput | null {
   if (!isObj(body)) return null;
@@ -79,10 +106,15 @@ export function parseTeamFeed(body: unknown): TeamFeedInput | null {
   if (!Array.isArray(body.agents) || body.agents.length > MAX_AGENTS) return null;
   const reportsIn = body.reports ?? [];
   if (!Array.isArray(reportsIn) || reportsIn.length > MAX_REPORTS) return null;
+  const tasksIn = body.tasks;
+  if (tasksIn !== undefined && (!Array.isArray(tasksIn) || tasksIn.length > MAX_TASKS)) return null;
+  const goal = text(body.goal, 300);
+  if (goal === undefined) return null;
   const agents = body.agents.map(member);
   const reports = reportsIn.map(report);
-  if (agents.includes(null) || reports.includes(null)) return null;
-  return { project, owner_email: owner, agents: agents as TeamMember[], reports: reports as TeamReport[] };
+  const tasks = tasksIn?.map(task);
+  if (agents.includes(null) || reports.includes(null) || tasks?.includes(null)) return null;
+  return { project, owner_email: owner, goal, agents: agents as TeamMember[], reports: reports as TeamReport[], tasks: tasks as TeamTask[] | undefined };
 }
 
 /** "Freekonomist.com" and "freekonomist" name the same project. */
