@@ -31,9 +31,9 @@ export interface Env {
   DB: D1Database;
   /** Optional; when unset, a secret is generated once and kept in the database. */
   SESSION_SECRET?: string;
-  /** Comma-separated promo codes that allow sign-up; sign-up is closed when unset. */
+  /** Comma-separated promo codes that allow sign-up; DEFAULT_SIGNUP_CODES when unset. */
   SIGNUP_CODES?: string;
-  /** Where landing-page requests are emailed; they are stored either way. */
+  /** Where landing-page requests are emailed (DEFAULT_LEADS_EMAIL when unset); they are stored either way. */
   LEADS_EMAIL?: string;
   /** Resend API key; needed for password reset emails. */
   RESEND_API_KEY?: string;
@@ -56,6 +56,9 @@ const MAX_LEADS_PER_HOUR = 60;
 const RESET_TTL_MS = 60 * 60_000;
 const MAX_RESETS_PER_HOUR = 3;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** Built-in settings, so the owner has nothing to configure; Cloudflare variables override them. */
+const DEFAULT_SIGNUP_CODES = "TAMANIA";
+const DEFAULT_LEADS_EMAIL = "arutyun@nazaryan.org";
 
 export const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -73,7 +76,7 @@ app.use("/api/*", async (c, next) => {
 function matchPromo(env: Env, code: string): string | null {
   const wanted = code.trim().toUpperCase();
   if (!wanted) return null;
-  const codes = (env.SIGNUP_CODES ?? "").split(",").map((c) => c.trim().toUpperCase()).filter(Boolean);
+  const codes = (env.SIGNUP_CODES || DEFAULT_SIGNUP_CODES).split(",").map((c) => c.trim().toUpperCase()).filter(Boolean);
   return codes.includes(wanted) ? wanted : null;
 }
 
@@ -222,7 +225,7 @@ app.post("/api/leads", async (c) => {
   await addLead(c.env.DB, lead, now);
   const send = mailer(c.env);
   // The request is already saved; a failed notification email is not the visitor's problem.
-  if (send && c.env.LEADS_EMAIL) await send(leadMail(c.env.LEADS_EMAIL, lead)).catch(() => false);
+  if (send) await send(leadMail(c.env.LEADS_EMAIL || DEFAULT_LEADS_EMAIL, lead)).catch(() => false);
   return c.json({ ok: true }, 201);
 });
 
