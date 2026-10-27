@@ -264,3 +264,16 @@ export async function linkOrgFeed(db: D1Database, orgId: string, feedId: string,
     .run();
   return res.meta.changes === 1;
 }
+
+/** Feeds owned by `email` that none of this user's projects shows yet. */
+export async function listUnlinkedOwnerFeeds(db: D1Database, userId: string, email: string): Promise<{ id: string; project: string }[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT f.id, f.project FROM team_feeds f WHERE f.owner_email = ? AND NOT EXISTS (
+         SELECT 1 FROM org_feeds o JOIN memberships m ON m.org_id = o.org_id WHERE o.feed_id = f.id AND m.user_id = ?
+       ) ORDER BY f.project`,
+    )
+    .bind(email, userId)
+    .all<{ id: string; project: string }>();
+  return results;
+}

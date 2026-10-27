@@ -24,6 +24,7 @@ import {
   listMessages,
   listOwnerFeeds,
   listPendingApprovals,
+  listUnlinkedOwnerFeeds,
   listUserOrgs,
   recordLoginFailure,
   saveTeamFeed,
@@ -122,9 +123,37 @@ async function jsonBody(c: Ctx): Promise<Record<string, unknown> | null> {
 
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 
+/**
+ * Gives the owner a project for each of their teams that reports from GitHub:
+ * a project with the same name gets the team, otherwise a new project is made.
+ * So an owner who signed up sees all their projects without setting anything up.
+ */
+async function adoptOwnFeeds(db: D1Database, user: { id: string; email: string }) {
+  const feeds = await listUnlinkedOwnerFeeds(db, user.id, user.email);
+  if (feeds.length === 0) return;
+  const orgs = await listUserOrgs(db, user.id);
+  for (const f of feeds) {
+    // "free" for freekonomist counts too, but only when nothing matches exactly.
+    const key = projectKey(f.project);
+    let org =
+      orgs.find((o) => projectKey(o.name) === key) ??
+      orgs.find((o) => projectKey(o.name).length >= 3 && key.startsWith(projectKey(o.name)));
+    // A project that already shows another team keeps it.
+    if (org && (await getOrgFeed(db, org.id))) continue;
+    if (!org) {
+      if (orgs.length >= MAX_ORGS_PER_USER) return;
+      const name = f.project.charAt(0).toUpperCase() + f.project.slice(1);
+      org = { id: await createOrg(db, user.id, { name, goal: "" }), name, goal: "", role: "owner" };
+      orgs.push(org);
+    }
+    await linkOrgFeed(db, org.id, f.id, user.email, Date.now());
+  }
+}
+
 async function me(c: Ctx, userId: string) {
   const user = await findUserById(c.env.DB, userId);
   if (!user) return null;
+  await adoptOwnFeeds(c.env.DB, user);
   return { user, orgs: await listUserOrgs(c.env.DB, userId) };
 }
 

@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { getMe, logout, type Me, type Org } from "./api";
 import { LogoMark } from "./components/Logo";
 import { ProjectTabs } from "./components/ProjectTabs";
-import { DEMO_APPROVALS } from "./demo";
 import { Approvals } from "./screens/Approvals";
 import { Auth, type Mode } from "./screens/Auth";
 import { Landing } from "./screens/Landing";
@@ -102,7 +101,7 @@ function Workspace({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
     setOrgId(id);
     try { localStorage.setItem(ORG_KEY, id); } catch { /* storage may be blocked */ }
   }
-  const [pending, setPending] = useState(DEMO_APPROVALS.length);
+  const [pending, setPending] = useState(0);
 
   useEffect(() => {
     const onHash = () => setTab(tabFromHash());
@@ -146,7 +145,7 @@ function Workspace({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         <div className="page" key={`${tab}-${org?.id}`}>
           {tab === "office" && org && <Office org={org} />}
           {tab === "chat" && <Chat />}
-          {tab === "reports" && <Reports />}
+          {tab === "reports" && org && <Reports org={org} />}
           {tab === "team" && <Team />}
         </div>
         {/* Kept mounted so decisions survive switching tabs. */}
