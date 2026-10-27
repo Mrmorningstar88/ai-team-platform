@@ -29,6 +29,21 @@ export function createTestDb(): { d1: D1Database; raw: DatabaseSync } {
   raw.exec("PRAGMA foreign_keys = ON");
   const dir = join(import.meta.dirname, "..", "migrations");
   for (const file of readdirSync(dir).sort()) raw.exec(readFileSync(join(dir, file), "utf8"));
-  const d1 = { prepare: (sql: string) => new Statement(raw, sql) } as unknown as D1Database;
+  const d1 = {
+    prepare: (sql: string) => new Statement(raw, sql),
+    // Like D1, a batch is one transaction: all statements apply or none do.
+    async batch(stmts: Statement[]) {
+      raw.exec("BEGIN");
+      try {
+        const out = [];
+        for (const s of stmts) out.push(await s.run());
+        raw.exec("COMMIT");
+        return out;
+      } catch (e) {
+        raw.exec("ROLLBACK");
+        throw e;
+      }
+    },
+  } as unknown as D1Database;
   return { d1, raw };
 }
