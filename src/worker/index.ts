@@ -1,12 +1,15 @@
 import { Hono, type Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import { hashPassword, randomSecret, verifyPassword } from "./password";
+import { resendSender, resetMail, type SendMail } from "./email";
+import { hashPassword, randomSecret, sha256, verifyPassword } from "./password";
 import {
   addOwnerMessage,
   clearLoginFailures,
   countRecentLoginFailures,
+  countRecentResets,
   createAccount,
   createOrg,
+  createReset,
   decideApproval,
   findUserByEmail,
   findUserById,
@@ -17,6 +20,7 @@ import {
   listPendingApprovals,
   listUserOrgs,
   recordLoginFailure,
+  useReset,
 } from "./repo";
 import { ensureSchema } from "./schema";
 import { signSession, verifySession } from "./session";
@@ -25,6 +29,12 @@ export interface Env {
   DB: D1Database;
   /** Optional; when unset, a secret is generated once and kept in the database. */
   SESSION_SECRET?: string;
+  /** Resend API key; needed for password reset emails. */
+  RESEND_API_KEY?: string;
+  /** Sender, e.g. "AI-команда <noreply@tamania.io>"; the domain must be verified in Resend. */
+  MAIL_FROM?: string;
+  /** Tests inject a fake sender here. */
+  sendMail?: SendMail;
 }
 
 type Vars = { userId: string; orgId: string };
@@ -35,6 +45,8 @@ const SESSION_DAYS = 30;
 const MAX_FAILURES = 10;
 const FAILURE_WINDOW_MS = 15 * 60_000;
 const MAX_ORGS_PER_USER = 20;
+const RESET_TTL_MS = 60 * 60_000;
+const MAX_RESETS_PER_HOUR = 3;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const app = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -131,6 +143,44 @@ app.post("/api/auth/login", async (c) => {
 app.post("/api/auth/logout", (c) => {
   deleteCookie(c, "sid", { path: "/", secure: true });
   return c.json({ ok: true });
+});
+
+function mailer(env: Env): SendMail | null {
+  if (env.sendMail) return env.sendMail;
+  return env.RESEND_API_KEY ? resendSender(env.RESEND_API_KEY, env.MAIL_FROM || "AI-команда <noreply@tamania.io>") : null;
+}
+
+// Answers the same way whether or not the email is registered, so emails can't be probed.
+app.post("/api/auth/forgot", async (c) => {
+  const body = await jsonBody(c);
+  if (!body) return c.json({ error: "invalid_body" }, 400);
+  const email = str(body.email).toLowerCase();
+  if (!EMAIL_RE.test(email) || email.length > 254) return c.json({ error: "invalid_email" }, 400);
+  const send = mailer(c.env);
+  if (!send) return c.json({ error: "email_not_configured" }, 503);
+
+  const user = await findUserByEmail(c.env.DB, email);
+  const now = Date.now();
+  if (user && (await countRecentResets(c.env.DB, user.id, now - 60 * 60_000)) < MAX_RESETS_PER_HOUR) {
+    const token = randomSecret();
+    await createReset(c.env.DB, user.id, await sha256(token), now, RESET_TTL_MS);
+    const link = `${new URL(c.req.url).origin}/#reset=${token}`;
+    if (!(await send(resetMail(email, user.name, link)))) return c.json({ error: "email_failed" }, 502);
+  }
+  return c.json({ ok: true });
+});
+
+app.post("/api/auth/reset", async (c) => {
+  const body = await jsonBody(c);
+  if (!body) return c.json({ error: "invalid_body" }, 400);
+  const token = str(body.token);
+  const password = typeof body.password === "string" ? body.password : "";
+  if (password.length < 8 || password.length > 128) return c.json({ error: "weak_password" }, 400);
+  if (!token || token.length > 100) return c.json({ error: "invalid_reset_link" }, 400);
+  const userId = await useReset(c.env.DB, await sha256(token), await hashPassword(password), Date.now());
+  if (!userId) return c.json({ error: "invalid_reset_link" }, 400);
+  await startSession(c, userId);
+  return c.json(await me(c, userId));
 });
 
 app.get("/api/me", async (c) => {

@@ -25,8 +25,15 @@ function tabFromHash(): TabId {
   return TABS.some((t) => t.id === id) ? (id as TabId) : "office";
 }
 
+/** A token from a password-reset email link, if the page was opened from one. */
+function resetTokenFromHash(): string | undefined {
+  const m = /^#reset=([\w-]+)$/.exec(window.location.hash);
+  return m?.[1];
+}
+
 /** Shows the sign-in screen until the server confirms a session. */
 export function App() {
+  const [resetToken] = useState(resetTokenFromHash);
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [notice, setNotice] = useState<string>();
 
@@ -45,7 +52,7 @@ export function App() {
       </div>
     );
   }
-  if (me === null) return <Auth onSignedIn={setMe} notice={notice} />;
+  if (me === null) return <Auth onSignedIn={setMe} notice={notice} resetToken={resetToken} />;
   return (
     <Workspace
       me={me}

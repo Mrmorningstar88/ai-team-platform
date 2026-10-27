@@ -43,3 +43,9 @@ export async function verifyPassword(password: string, stored: string | null): P
 export function randomSecret(): string {
   return b64url(crypto.getRandomValues(new Uint8Array(32)));
 }
+
+/** Hex SHA-256, used to store one-time tokens without keeping the tokens themselves. */
+export async function sha256(text: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(text)));
+  return Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
+}

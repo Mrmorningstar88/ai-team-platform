@@ -158,6 +158,40 @@ export async function clearLoginFailures(db: D1Database, email: string): Promise
   await db.prepare("DELETE FROM login_failures WHERE email = ?").bind(email).run();
 }
 
+// ---- Password reset links ----
+
+export async function countRecentResets(db: D1Database, userId: string, sinceMs: number): Promise<number> {
+  const row = await db.prepare("SELECT COUNT(*) AS n FROM password_resets WHERE user_id = ? AND created_ms > ?").bind(userId, sinceMs).first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+export async function createReset(db: D1Database, userId: string, tokenHash: string, nowMs: number, ttlMs: number): Promise<void> {
+  await db.batch([
+    db.prepare("INSERT INTO password_resets (token_hash, user_id, expires_ms, created_ms) VALUES (?, ?, ?, ?)").bind(tokenHash, userId, nowMs + ttlMs, nowMs),
+    db.prepare("DELETE FROM password_resets WHERE expires_ms < ?").bind(nowMs - 86_400_000),
+  ]);
+}
+
+/**
+ * Spends a reset link: sets the new password and removes every open link for
+ * that user, in one batch. Returns the user id, or null for an unknown,
+ * expired or already used link.
+ */
+export async function useReset(db: D1Database, tokenHash: string, passwordHash: string, nowMs: number): Promise<string | null> {
+  const row = await db
+    .prepare("SELECT user_id FROM password_resets WHERE token_hash = ? AND expires_ms > ?")
+    .bind(tokenHash, nowMs)
+    .first<{ user_id: string }>();
+  if (!row) return null;
+  const results = await db.batch([
+    // Deleting this token first means a second, racing request changes nothing.
+    db.prepare("DELETE FROM password_resets WHERE token_hash = ?").bind(tokenHash),
+    db.prepare("UPDATE users SET password_hash = ? WHERE id = ? AND changes() = 1").bind(passwordHash, row.user_id),
+    db.prepare("DELETE FROM password_resets WHERE user_id = ?").bind(row.user_id),
+  ]);
+  return results[1]?.meta.changes ? row.user_id : null;
+}
+
 /** Reads a server-generated setting, creating it with `make()` on first use. */
 export async function getOrCreateSetting(db: D1Database, key: string, make: () => string): Promise<string> {
   const existing = await db.prepare("SELECT value FROM app_settings WHERE key = ?").bind(key).first<{ value: string }>();
