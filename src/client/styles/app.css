@@ -574,3 +574,17 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .chat-screen { display: flex; flex-direction: column; min-height: calc(100dvh - 96px); }
 .chat-screen .chat { flex: 1; }
 @media (max-width: 760px) { .chat-screen { min-height: calc(100dvh - 210px); } }
+
+/* ---------- Progress towards the goal ---------- */
+
+.goal-progress ul { margin: 12px 0 0; padding: 0; list-style: none; display: grid; gap: 16px; }
+.gp-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.gp-label { font-weight: 600; }
+.gp-pct { font-size: 20px; }
+.gp-value { color: var(--text-2); }
+.gp-value strong { color: var(--text); font-size: 20px; }
+.gp-bar { height: 12px; margin-top: 6px; border-radius: 6px; background: var(--separator); overflow: hidden; }
+.gp-fill { display: block; height: 100%; border-radius: 6px; background: var(--good-dot); transition: width 320ms var(--ease); }
+/* Any real progress stays visible, however small the share. */
+.gp-fill.started { min-width: 6px; }
+@media (prefers-reduced-motion: reduce) { .gp-fill { transition: none; } }

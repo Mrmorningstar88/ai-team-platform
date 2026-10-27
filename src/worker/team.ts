@@ -22,6 +22,12 @@ export interface TeamReport { title: string; summary: string; link: string; upda
 export type TaskStatus = "new" | "running" | "done" | "failed";
 export interface TeamTask { title: string; status: TaskStatus; link: string; updated: string }
 
+/**
+ * One measurable step towards the goal, counted by the team from the project's own data.
+ * `value` null means "not measured yet"; `target` null means a running count with no finish line.
+ */
+export interface ProgressItem { label: string; value: number | null; target: number | null; unit: string; note: string }
+
 export interface TeamFeedInput {
   project: string;
   owner_email: string;
@@ -31,12 +37,15 @@ export interface TeamFeedInput {
   reports: TeamReport[];
   /** Missing when the team couldn't read its queue this time; the last known backlog is kept. */
   tasks?: TeamTask[];
+  /** Missing when the team couldn't count this time; the last known progress is kept. */
+  progress?: ProgressItem[];
 }
 
 const STATUSES: TeamStatus[] = ["working", "done", "error", "waiting", "idle", "planned"];
 const MAX_AGENTS = 40;
 const MAX_REPORTS = 20;
 const MAX_TASKS = 30;
+const MAX_PROGRESS = 6;
 const TASK_STATUSES: TaskStatus[] = ["new", "running", "done", "failed"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -97,6 +106,19 @@ function task(v: unknown): TeamTask | null {
   return t as TeamTask;
 }
 
+/** A finite, non-negative number, null when absent; undefined when it is anything else. */
+function amount(v: unknown): number | null | undefined {
+  if (v === undefined || v === null) return null;
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined;
+}
+
+function progressItem(v: unknown): ProgressItem | null {
+  if (!isObj(v)) return null;
+  const p = { label: text(v.label, 60), value: amount(v.value), target: amount(v.target), unit: text(v.unit, 4), note: text(v.note, 120) };
+  if (Object.values(p).some((x) => x === undefined) || !p.label || p.target === 0) return null;
+  return p as ProgressItem;
+}
+
 /** The validated feed, or null when anything in it is malformed. */
 export function parseTeamFeed(body: unknown): TeamFeedInput | null {
   if (!isObj(body)) return null;
@@ -108,13 +130,19 @@ export function parseTeamFeed(body: unknown): TeamFeedInput | null {
   if (!Array.isArray(reportsIn) || reportsIn.length > MAX_REPORTS) return null;
   const tasksIn = body.tasks;
   if (tasksIn !== undefined && (!Array.isArray(tasksIn) || tasksIn.length > MAX_TASKS)) return null;
+  const progressIn = body.progress;
+  if (progressIn !== undefined && (!Array.isArray(progressIn) || progressIn.length > MAX_PROGRESS)) return null;
   const goal = text(body.goal, 300);
   if (goal === undefined) return null;
   const agents = body.agents.map(member);
   const reports = reportsIn.map(report);
   const tasks = tasksIn?.map(task);
-  if (agents.includes(null) || reports.includes(null) || tasks?.includes(null)) return null;
-  return { project, owner_email: owner, goal, agents: agents as TeamMember[], reports: reports as TeamReport[], tasks: tasks as TeamTask[] | undefined };
+  const progress = progressIn?.map(progressItem);
+  if (agents.includes(null) || reports.includes(null) || tasks?.includes(null) || progress?.includes(null)) return null;
+  return {
+    project, owner_email: owner, goal, agents: agents as TeamMember[], reports: reports as TeamReport[],
+    tasks: tasks as TeamTask[] | undefined, progress: progress as ProgressItem[] | undefined,
+  };
 }
 
 /** "Freekonomist.com" and "freekonomist" name the same project. */
