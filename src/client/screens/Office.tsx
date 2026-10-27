@@ -26,7 +26,8 @@ const ICONS: [RegExp, string][] = [
 ];
 const iconFor = (id: string) => ICONS.find(([re]) => re.test(id))?.[1] ?? "🤖";
 
-const COLORS = ["#7a5bc0", "#2f6fc4", "#1f8a9c", "#c07a1f", "#c0466a", "#2c8a5c", "#8a5a2c", "#5b6bc0"];
+// Shirt colors are system colors (tokens.css), never blue: blue is kept for things you can tap.
+const COLORS = ["var(--sys-purple)", "var(--sys-indigo)", "var(--sys-teal)", "var(--sys-orange)", "var(--sys-pink)", "var(--sys-green)", "var(--sys-brown)", "var(--sys-mint)"];
 const colorFor = (id: string) => COLORS[[...id].reduce((n, ch) => n + ch.charCodeAt(0), 0) % COLORS.length]!;
 
 const TASK_COLUMNS: { status: TaskStatus; icon: string; title: string }[] = [

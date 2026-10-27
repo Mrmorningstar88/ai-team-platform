@@ -82,7 +82,7 @@ function DeskArt({ person, mode }: { person: ScenePerson; mode: SceneMode | "bus
       <ellipse className="s-chair" cx={px} cy={py} rx={12} ry={6} />
       {mode !== "planned" && (
         <g className="s-body">
-          <rect x={px - 8} y={py - 24} width={16} height={20} rx={7} fill={person.color} />
+          <rect x={px - 8} y={py - 24} width={16} height={20} rx={7} style={{ fill: person.color }} />
           <circle className="s-skin" cx={px} cy={py - 31} r={7.5} />
           <rect className="s-skin s-arm-l" x={px - 12} y={py - 20} width={4} height={11} rx={2} />
           <rect className="s-skin s-arm-r" x={px + 8} y={py - 20} width={4} height={11} rx={2} />

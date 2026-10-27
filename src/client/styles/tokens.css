@@ -1,30 +1,62 @@
 /*
- * Design tokens. Colors follow Apple HIG system colors with light and dark
- * variants; every text pair is checked against WCAG AA 4.5:1 (UI rulebook §03).
- * Replace these values when the design-system repo is connected; keep the roles.
+ * Design tokens, following Apple HIG "Color"
+ * (developer.apple.com/design/human-interface-guidelines/color):
+ * - semantic roles, not raw values, in components (label, secondary label, grouped backgrounds, separator, link);
+ * - every color has light, dark and Increased Contrast (prefers-contrast: more) variants;
+ * - system colors use the June 2025 values; where a system value is under 4.5:1 for text
+ *   (UI rulebook §03), the text role uses a deepened variant and says so;
+ * - blue (--accent) means "you can tap this" and nothing else; non-interactive highlights
+ *   (progress, the flying envelope, charts) use --data (systemIndigo).
  */
 :root {
   color-scheme: light dark;
 
+  /* System colors (HIG Specifications), for illustrations, role colors and status dots. */
+  --sys-red: #ff383c;
+  --sys-orange: #ff8d28;
+  --sys-yellow: #ffcc00;
+  --sys-green: #34c759;
+  --sys-mint: #00c8b3;
+  --sys-teal: #00c3d0;
+  --sys-blue: #0088ff;
+  --sys-indigo: #6155f5;
+  --sys-purple: #cb30e0;
+  --sys-pink: #ff2d55;
+  --sys-brown: #ac7f5e;
+  --sys-gray: #8e8e93;
+
+  /* Backgrounds: grouped set, primary → secondary → tertiary. */
   --bg: #f2f2f7;              /* systemGroupedBackground */
   --surface: #ffffff;         /* secondarySystemGroupedBackground */
-  --surface-2: #f2f2f7;
-  --separator: rgba(60, 60, 67, 0.18);
+  --surface-2: #f2f2f7;       /* tertiarySystemGroupedBackground */
+  --separator: rgba(60, 60, 67, 0.29);  /* separator */
+  --separator-opaque: #c6c6c8;          /* opaqueSeparator */
+
+  /* Foreground. */
   --text: #000000;            /* label */
-  --text-2: #6c6c70;          /* secondaryLabel, opaque: 5.2:1 on white */
-  --accent: #0066d6;          /* systemBlue, deepened: 5.4:1 with white */
+  --text-2: #6c6c70;          /* secondaryLabel, opaque and deepened: 4.7:1 on grouped background */
+  --placeholder: #6c6c70;     /* placeholderText, kept at secondaryLabel for 4.5:1 */
+  --accent: #0066d6;          /* link / tint: systemBlue deepened, 4.9:1 on grouped background */
   --on-accent: #ffffff;
-  --accent-soft: rgba(0, 122, 255, 0.12);
-  --good: #1e7b34;            /* text-safe systemGreen */
-  --good-dot: #34c759;
-  --warn: #c93400;            /* text-safe systemOrange */
-  --warn-dot: #ff9500;
+  --accent-soft: rgba(0, 136, 255, 0.12);
+  --data: #6155f5;            /* systemIndigo: non-interactive highlights */
+  --on-data: #ffffff;
+  --data-soft: rgba(97, 85, 245, 0.12);
+
+  /* Status: a text-safe color for words, the system color for dots and fills. Never color alone. */
+  --good: #1e7b34;
+  --good-dot: var(--sys-green);
+  --on-good: #08210f;
+  --warn: #c93400;
+  --warn-dot: var(--sys-orange);
   --bad: #d70015;
-  --bad-dot: #ff3b30;
+  --bad-dot: var(--sys-red);
+  --on-bad: #ffffff;
 
   --radius: 14px;
   --radius-sm: 10px;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.06);
+  --scrim: rgba(0, 0, 0, 0.35);
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
   --text-size: 17px;          /* rulebook: body 16–18px */
   --line: 1.5;
@@ -52,26 +84,45 @@
   --s-skin: #e6b998;
   --s-chair: #5d6b67;
   --s-rack: #3a4744;
+  --s-paper: #ffffff;
 }
 
+/* Dark appearance: system preference, unless the page is forced light. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    --sys-red: #ff4245;
+    --sys-orange: #ff9230;
+    --sys-yellow: #ffd600;
+    --sys-green: #30d158;
+    --sys-mint: #00dac3;
+    --sys-teal: #00d2e0;
+    --sys-blue: #0091ff;
+    --sys-indigo: #6d7cff;
+    --sys-purple: #db34f2;
+    --sys-pink: #ff375f;
+    --sys-brown: #b78a66;
+    --sys-gray: #8e8e93;
     --bg: #000000;
     --surface: #1c1c1e;
     --surface-2: #2c2c2e;
     --separator: rgba(84, 84, 88, 0.6);
+    --separator-opaque: #38383a;
     --text: #ffffff;
     --text-2: #aeaeb2;
-    --accent: #0a84ff;
-    --on-accent: #000000;     /* 5.8:1; white would be 3.6:1 */
-    --accent-soft: rgba(10, 132, 255, 0.18);
+    --placeholder: #aeaeb2;
+    --accent: #0091ff;
+    --on-accent: #000000;     /* 6.5:1; white would be 3.2:1 */
+    --accent-soft: rgba(0, 145, 255, 0.2);
+    --data: #6d7cff;
+    --on-data: #000000;
+    --data-soft: rgba(109, 124, 255, 0.2);
     --good: #30d158;
-    --good-dot: #30d158;
-    --warn: #ff9f0a;
-    --warn-dot: #ff9f0a;
-    --bad: #ff6961;
-    --bad-dot: #ff453a;
+    --on-good: #08210f;
+    --warn: #ff9230;
+    --bad: #ff6165;
+    --on-bad: #000000;
     --shadow: none;
+    --scrim: rgba(0, 0, 0, 0.6);
     --s-floor: #1c2724;
     --s-floor-line: #26332f;
     --s-wall-l: #1f2b28;
@@ -84,26 +135,44 @@
     --s-skin: #c99a7a;
     --s-chair: #3b4744;
     --s-rack: #10171a;
+    --s-paper: #f2f2f7;
   }
 }
 
 :root[data-theme="dark"] {
+  --sys-red: #ff4245;
+  --sys-orange: #ff9230;
+  --sys-yellow: #ffd600;
+  --sys-green: #30d158;
+  --sys-mint: #00dac3;
+  --sys-teal: #00d2e0;
+  --sys-blue: #0091ff;
+  --sys-indigo: #6d7cff;
+  --sys-purple: #db34f2;
+  --sys-pink: #ff375f;
+  --sys-brown: #b78a66;
+  --sys-gray: #8e8e93;
   --bg: #000000;
   --surface: #1c1c1e;
   --surface-2: #2c2c2e;
   --separator: rgba(84, 84, 88, 0.6);
+  --separator-opaque: #38383a;
   --text: #ffffff;
   --text-2: #aeaeb2;
-  --accent: #0a84ff;
+  --placeholder: #aeaeb2;
+  --accent: #0091ff;
   --on-accent: #000000;
-  --accent-soft: rgba(10, 132, 255, 0.18);
+  --accent-soft: rgba(0, 145, 255, 0.2);
+  --data: #6d7cff;
+  --on-data: #000000;
+  --data-soft: rgba(109, 124, 255, 0.2);
   --good: #30d158;
-  --good-dot: #30d158;
-  --warn: #ff9f0a;
-  --warn-dot: #ff9f0a;
-  --bad: #ff6961;
-  --bad-dot: #ff453a;
+  --on-good: #08210f;
+  --warn: #ff9230;
+  --bad: #ff6165;
+  --on-bad: #000000;
   --shadow: none;
+  --scrim: rgba(0, 0, 0, 0.6);
   --s-floor: #1c2724;
   --s-floor-line: #26332f;
   --s-wall-l: #1f2b28;
@@ -116,4 +185,116 @@
   --s-skin: #c99a7a;
   --s-chair: #3b4744;
   --s-rack: #10171a;
+  --s-paper: #f2f2f7;
+}
+
+/*
+ * Increased Contrast (HIG: "an increased contrast option for each variant").
+ * Light: system colors darken, secondary text and separators get stronger.
+ */
+@media (prefers-contrast: more) and (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --sys-red: #e9152d;
+    --sys-orange: #c55300;
+    --sys-yellow: #a16a00;
+    --sys-green: #008932;
+    --sys-mint: #008575;
+    --sys-teal: #008198;
+    --sys-blue: #1e6ef4;
+    --sys-indigo: #564ade;
+    --sys-purple: #b02fc2;
+    --sys-pink: #e7124d;
+    --sys-brown: #956d51;
+    --sys-gray: #6c6c70;
+    --separator: rgba(60, 60, 67, 0.5);
+    --separator-opaque: #8e8e93;
+    --text-2: #3c3c43;
+    --placeholder: #3c3c43;
+    --accent: #0050b0;
+    --data: #564ade;
+    --good: #006b27;
+    --on-good: #ffffff;
+    --warn: #a33a00;
+    --bad: #b5001a;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root[data-theme="light"] {
+    --sys-red: #e9152d;
+    --sys-orange: #c55300;
+    --sys-yellow: #a16a00;
+    --sys-green: #008932;
+    --sys-mint: #008575;
+    --sys-teal: #008198;
+    --sys-blue: #1e6ef4;
+    --sys-indigo: #564ade;
+    --sys-purple: #b02fc2;
+    --sys-pink: #e7124d;
+    --sys-brown: #956d51;
+    --sys-gray: #6c6c70;
+    --separator: rgba(60, 60, 67, 0.5);
+    --separator-opaque: #8e8e93;
+    --text-2: #3c3c43;
+    --placeholder: #3c3c43;
+    --accent: #0050b0;
+    --data: #564ade;
+    --good: #006b27;
+    --on-good: #ffffff;
+    --warn: #a33a00;
+    --bad: #b5001a;
+  }
+}
+
+/* Dark + Increased Contrast: system colors lighten, secondary text nearly white. */
+@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sys-red: #ff6165;
+    --sys-orange: #ffa056;
+    --sys-yellow: #fedf43;
+    --sys-green: #4ad968;
+    --sys-mint: #54dfcb;
+    --sys-teal: #3bddec;
+    --sys-blue: #5cb8ff;
+    --sys-indigo: #a7aaff;
+    --sys-purple: #ea8dff;
+    --sys-pink: #ff8ac4;
+    --sys-brown: #dba679;
+    --sys-gray: #aeaeb2;
+    --separator: rgba(84, 84, 88, 0.9);
+    --separator-opaque: #636366;
+    --text-2: #ebebf5;
+    --placeholder: #ebebf5;
+    --accent: #5cb8ff;
+    --data: #a7aaff;
+    --good: #4ad968;
+    --warn: #ffa056;
+    --bad: #ff6165;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root[data-theme="dark"] {
+    --sys-red: #ff6165;
+    --sys-orange: #ffa056;
+    --sys-yellow: #fedf43;
+    --sys-green: #4ad968;
+    --sys-mint: #54dfcb;
+    --sys-teal: #3bddec;
+    --sys-blue: #5cb8ff;
+    --sys-indigo: #a7aaff;
+    --sys-purple: #ea8dff;
+    --sys-pink: #ff8ac4;
+    --sys-brown: #dba679;
+    --sys-gray: #aeaeb2;
+    --separator: rgba(84, 84, 88, 0.9);
+    --separator-opaque: #636366;
+    --text-2: #ebebf5;
+    --placeholder: #ebebf5;
+    --accent: #5cb8ff;
+    --data: #a7aaff;
+    --good: #4ad968;
+    --warn: #ffa056;
+    --bad: #ff6165;
+  }
 }
