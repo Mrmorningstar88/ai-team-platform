@@ -1,6 +1,8 @@
 // All tenant data access lives here. Every query on a tenant table binds
 // org_id, so one organization can never read or change another's rows.
 
+import type { TeamFeedInput } from "./team";
+
 export interface AgentRow { id: string; role: string; name: string; autonomy: string; status: string }
 export interface ApprovalRow { id: string; task_id: string; summary: string; decision: string | null }
 export interface MessageRow { id: string; author: "owner" | "ceo"; body: string; created_at: string }
@@ -218,4 +220,47 @@ export async function getOrCreateSetting(db: D1Database, key: string, make: () =
   await db.prepare("INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)").bind(key, make()).run();
   const row = await db.prepare("SELECT value FROM app_settings WHERE key = ?").bind(key).first<{ value: string }>();
   return row!.value;
+}
+
+// ---- Team feeds: live status from bots that run outside Tamania ----
+
+export interface FeedRow { id: string; repo: string; project: string; payload: string; updated_ms: number }
+
+/** Stores the latest status a repository reported for one project, replacing the previous one. */
+export async function saveTeamFeed(db: D1Database, repo: string, input: TeamFeedInput, nowMs: number): Promise<string> {
+  const id = `${repo}#${input.project}`;
+  const payload = JSON.stringify({ agents: input.agents, reports: input.reports });
+  await db
+    .prepare(
+      `INSERT INTO team_feeds (id, repo, project, owner_email, payload, updated_ms) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET owner_email = excluded.owner_email, payload = excluded.payload, updated_ms = excluded.updated_ms`,
+    )
+    .bind(id, repo, input.project, input.owner_email, payload, nowMs)
+    .run();
+  return id;
+}
+
+export async function getOrgFeed(db: D1Database, orgId: string): Promise<FeedRow | null> {
+  return db
+    .prepare("SELECT f.id, f.repo, f.project, f.payload, f.updated_ms FROM org_feeds o JOIN team_feeds f ON f.id = o.feed_id WHERE o.org_id = ?")
+    .bind(orgId)
+    .first<FeedRow>();
+}
+
+/** Feeds that name this email as their owner, so only that user can attach them. */
+export async function listOwnerFeeds(db: D1Database, email: string): Promise<Omit<FeedRow, "payload">[]> {
+  const { results } = await db
+    .prepare("SELECT id, repo, project, updated_ms FROM team_feeds WHERE owner_email = ? ORDER BY project")
+    .bind(email)
+    .all<Omit<FeedRow, "payload">>();
+  return results;
+}
+
+/** Attaches a feed to an organization; false when the feed does not belong to `email`. */
+export async function linkOrgFeed(db: D1Database, orgId: string, feedId: string, email: string, nowMs: number): Promise<boolean> {
+  const res = await db
+    .prepare("INSERT OR REPLACE INTO org_feeds (org_id, feed_id, linked_ms) SELECT ?, id, ? FROM team_feeds WHERE id = ? AND owner_email = ?")
+    .bind(orgId, nowMs, feedId, email)
+    .run();
+  return res.meta.changes === 1;
 }

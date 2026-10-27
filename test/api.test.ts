@@ -257,3 +257,100 @@ describe("landing requests", () => {
     expect((await lead({ kind: "access", name: "A", email: "a@example.com", message: "x".repeat(2001) })).status).toBe(400);
   });
 });
+
+describe("team feeds", () => {
+  const b64url = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64url");
+  const enc = (o: object) => b64url(new TextEncoder().encode(JSON.stringify(o)));
+  let keys: CryptoKeyPair;
+  let feedEnv: Env;
+
+  beforeEach(async () => {
+    keys = (await crypto.subtle.generateKey(
+      { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+      true,
+      ["sign", "verify"],
+    )) as CryptoKeyPair;
+    const jwk = await crypto.subtle.exportKey("jwk", keys.publicKey);
+    feedEnv = { ...env, githubJwks: { keys: [{ ...jwk, kid: "k1" }] } };
+  });
+
+  async function token(claims: Record<string, unknown> = {}) {
+    const body = {
+      iss: "https://token.actions.githubusercontent.com",
+      aud: "tamania",
+      exp: Math.floor(Date.now() / 1000) + 300,
+      repository: "owner/site",
+      ref: "refs/heads/main",
+      ...claims,
+    };
+    const head = `${enc({ alg: "RS256", kid: "k1" })}.${enc(body)}`;
+    const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", keys.privateKey, new TextEncoder().encode(head));
+    return `${head}.${b64url(new Uint8Array(sig))}`;
+  }
+
+  const feed = (project: string, extra: Record<string, unknown> = {}) => ({
+    project,
+    owner_email: "a@example.com",
+    agents: [{ id: "smm", name: "SMM", role: "Соцсети", status: "done", last_run: "2026-10-27T10:00:00Z", summary: "Посты вышли", link: "https://github.com/owner/site/actions" }],
+    reports: [{ title: "Переходы", summary: "310 кликов", link: "https://github.com/owner/site/issues/1", updated: "2026-10-26" }],
+    ...extra,
+  });
+
+  const ingest = async (body: unknown, auth?: string) =>
+    app.request(
+      "/api/ingest/team",
+      { method: "POST", headers: { "Content-Type": "application/json", ...(auth ? { Authorization: `Bearer ${auth}` } : {}) }, body: JSON.stringify(body) },
+      feedEnv,
+    );
+
+  it("accepts only a valid GitHub token from the main branch", async () => {
+    expect((await ingest(feed("ainc"))).status).toBe(401);
+    expect((await ingest(feed("ainc"), await token({ aud: "other" }))).status).toBe(401);
+    expect((await ingest(feed("ainc"), await token({ ref: "refs/heads/feature" }))).status).toBe(401);
+    expect((await ingest(feed("ainc"), await token({ exp: 1 }))).status).toBe(401);
+    expect((await ingest(feed("ainc"), (await token()).replace(/\.(.)([^.]+)$/, (_, ch: string, rest: string) => `.${ch === "A" ? "B" : "A"}${rest}`))).status).toBe(401);
+    expect((await ingest(feed("ainc"), await token())).status).toBe(200);
+  });
+
+  it("rejects malformed feeds", async () => {
+    const t = await token();
+    expect((await ingest(feed("Bad Project!"), t)).status).toBe(400);
+    expect((await ingest(feed("ainc", { owner_email: "nope" }), t)).status).toBe(400);
+    expect((await ingest(feed("ainc", { agents: [{ id: "x", name: "X", status: "hacking" }] }), t)).status).toBe(400);
+    expect((await ingest(feed("ainc", { reports: [{ title: "x", link: "javascript:alert(1)" }] }), t)).status).toBe(400);
+  });
+
+  it("shows a matching feed in the owner's org and keeps it from others", async () => {
+    await ingest(feed("ainc"), await token());
+    const mine = await app.request("/api/orgs/org-a/team", { headers: await as("u-a") }, feedEnv);
+    const data = (await mine.json()) as { feed: { repo: string; agents: { name: string }[]; reports: unknown[] } };
+    expect(data.feed.repo).toBe("owner/site");
+    expect(data.feed.agents.map((a) => a.name)).toEqual(["SMM"]);
+    expect(data.feed.reports).toHaveLength(1);
+    // B is not the feed's owner: nothing is offered, linking fails, and A's org stays hidden.
+    const theirs = (await (await app.request("/api/orgs/org-b/team", { headers: await as("u-b") }, feedEnv)).json()) as { feed: unknown; available: unknown[] };
+    expect(theirs).toEqual({ feed: null, available: [] });
+    const link = await app.request(
+      "/api/orgs/org-b/team",
+      { method: "POST", headers: { ...(await as("u-b")), "Content-Type": "application/json" }, body: JSON.stringify({ feed_id: "owner/site#ainc" }) },
+      feedEnv,
+    );
+    expect(link.status).toBe(404);
+    expect((await app.request("/api/orgs/org-a/team", { headers: await as("u-b") }, feedEnv)).status).toBe(404);
+  });
+
+  it("offers a feed with another name and attaches it on request", async () => {
+    await ingest(feed("brainax"), await token());
+    const before = (await (await app.request("/api/orgs/org-a/team", { headers: await as("u-a") }, feedEnv)).json()) as { feed: unknown; available: { id: string }[] };
+    expect(before.feed).toBeNull();
+    expect(before.available.map((f) => f.id)).toEqual(["owner/site#brainax"]);
+    const link = await app.request(
+      "/api/orgs/org-a/team",
+      { method: "POST", headers: { ...(await as("u-a")), "Content-Type": "application/json" }, body: JSON.stringify({ feed_id: "owner/site#brainax" }) },
+      feedEnv,
+    );
+    expect(link.status).toBe(200);
+    const after = (await (await app.request("/api/orgs/org-a/team", { headers: await as("u-a") }, feedEnv)).json()) as { feed: { project: string } };
+    expect(after.feed.project).toBe("brainax");
+  });
+});
