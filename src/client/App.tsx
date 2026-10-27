@@ -49,7 +49,6 @@ function useSignedOutView(): Mode | "landing" {
 
 /** Shows the landing and sign-in screens until the server confirms a session. */
 export function App() {
-  const [resetToken] = useState(resetTokenFromHash);
   const signedOutView = useSignedOutView();
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [notice, setNotice] = useState<string>();
@@ -70,9 +69,9 @@ export function App() {
     );
   }
   if (me === null) {
-    if (signedOutView === "landing" && !notice) return <Landing />;
-    const mode = signedOutView === "landing" ? "login" : signedOutView;
-    return <Auth key={mode} onSignedIn={setMe} notice={notice} resetToken={resetToken} initialMode={mode} />;
+    // The landing always stays reachable; a server notice shows on the sign-in form.
+    if (signedOutView === "landing") return <Landing />;
+    return <Auth key={signedOutView} onSignedIn={setMe} notice={notice} resetToken={resetTokenFromHash()} initialMode={signedOutView} />;
   }
   return (
     <Workspace
