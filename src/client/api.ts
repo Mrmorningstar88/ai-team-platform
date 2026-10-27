@@ -163,6 +163,15 @@ export async function getMessages(orgId: string): Promise<ApiResult<ChatMessage[
   return Array.isArray(r.data) && r.data.every(isChatMessage) ? { ok: true, data: r.data } : { ok: false, status: 500, error: "server" };
 }
 
+/** Asks the CEO to answer the owner's messages saved while it couldn't reply; `reply` is null when there was nothing to answer. */
+export async function answerSaved(orgId: string): Promise<ApiResult<{ reply: ChatMessage | null; error?: string }>> {
+  const r = await call("POST", `/api/orgs/${encodeURIComponent(orgId)}/messages/answer`);
+  if (!r.ok) return r;
+  const d = r.data;
+  if (!isObj(d) || (d.reply !== null && !isChatMessage(d.reply))) return { ok: false, status: 500, error: "server" };
+  return { ok: true, data: { reply: d.reply as ChatMessage | null, error: typeof d.error === "string" ? d.error : undefined } };
+}
+
 /** Sends the owner's message; `reply` is the CEO's answer, or null with `error` when the CEO could not answer. */
 export async function sendMessage(orgId: string, body: string): Promise<ApiResult<{ id: string; reply: ChatMessage | null; error?: string }>> {
   const r = await call("POST", `/api/orgs/${encodeURIComponent(orgId)}/messages`, { body });

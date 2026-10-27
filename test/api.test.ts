@@ -469,6 +469,20 @@ describe("team feeds", () => {
     // Without a key the message is still saved and the owner is told why there is no answer.
     const noKey = await post("org-a", "u-a", "Ты тут?", feedEnv);
     expect(((await noKey.json()) as { error: string }).error).toBe("ceo_not_configured");
+
+    // Once the key is there, the saved messages get their answer without the owner writing again.
+    const answer = async (orgId: string, userId: string, e = ceoEnv) =>
+      app.request(`/api/orgs/${orgId}/messages/answer`, { method: "POST", headers: await as(userId) }, e);
+    expect((await answer("org-a", "u-b")).status).toBe(404);
+    expect(((await (await answer("org-a", "u-a", feedEnv)).json()) as { error: string }).error).toBe("ceo_not_configured");
+    const late = (await (await answer("org-a", "u-a")).json()) as { reply: { body: string } };
+    expect(late.reply.body).toBe("План: SMM продолжает посты.");
+    expect(seen.at(-1)!.history.at(-1)).toEqual({ author: "owner", body: "Ты тут?" });
+    // Nothing is left unanswered, so asking again adds nothing.
+    expect(((await (await answer("org-a", "u-a")).json()) as { reply: null }).reply).toBeNull();
+    expect(((await (await answer("org-b", "u-b")).json()) as { reply: null }).reply).toBeNull();
+    expect(await (await app.request("/api/health", {}, ceoEnv)).json()).toEqual({ ok: true, ceo: true });
+    expect(await (await app.request("/api/health", {}, feedEnv)).json()).toEqual({ ok: true, ceo: false });
   });
 
   it("offers a feed with another name and attaches it on request", async () => {
