@@ -29,7 +29,8 @@ export interface TeamFeedInput {
   goal: string;
   agents: TeamMember[];
   reports: TeamReport[];
-  tasks: TeamTask[];
+  /** Missing when the team couldn't read its queue this time; the last known backlog is kept. */
+  tasks?: TeamTask[];
 }
 
 const STATUSES: TeamStatus[] = ["working", "done", "error", "waiting", "idle", "planned"];
@@ -105,15 +106,15 @@ export function parseTeamFeed(body: unknown): TeamFeedInput | null {
   if (!Array.isArray(body.agents) || body.agents.length > MAX_AGENTS) return null;
   const reportsIn = body.reports ?? [];
   if (!Array.isArray(reportsIn) || reportsIn.length > MAX_REPORTS) return null;
-  const tasksIn = body.tasks ?? [];
-  if (!Array.isArray(tasksIn) || tasksIn.length > MAX_TASKS) return null;
+  const tasksIn = body.tasks;
+  if (tasksIn !== undefined && (!Array.isArray(tasksIn) || tasksIn.length > MAX_TASKS)) return null;
   const goal = text(body.goal, 300);
   if (goal === undefined) return null;
   const agents = body.agents.map(member);
   const reports = reportsIn.map(report);
-  const tasks = tasksIn.map(task);
-  if (agents.includes(null) || reports.includes(null) || tasks.includes(null)) return null;
-  return { project, owner_email: owner, goal, agents: agents as TeamMember[], reports: reports as TeamReport[], tasks: tasks as TeamTask[] };
+  const tasks = tasksIn?.map(task);
+  if (agents.includes(null) || reports.includes(null) || tasks?.includes(null)) return null;
+  return { project, owner_email: owner, goal, agents: agents as TeamMember[], reports: reports as TeamReport[], tasks: tasks as TeamTask[] | undefined };
 }
 
 /** "Freekonomist.com" and "freekonomist" name the same project. */

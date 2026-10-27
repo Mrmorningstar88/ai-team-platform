@@ -409,6 +409,10 @@ describe("team feeds", () => {
     const data = (await (await app.request("/api/orgs/org-a/team", { headers: await as("u-a") }, feedEnv)).json()) as { feed: { goal: string; tasks: unknown[] } };
     expect(data.feed.goal).toBe("1 млн пользователей");
     expect(data.feed.tasks).toEqual(tasks);
+    // A report without tasks (the queue couldn't be read) keeps the last known backlog.
+    expect((await ingest(feed("ainc", { goal: "1 млн пользователей" }), t)).status).toBe(200);
+    const kept = (await (await app.request("/api/orgs/org-a/team", { headers: await as("u-a") }, feedEnv)).json()) as { feed: { tasks: unknown[] } };
+    expect(kept.feed.tasks).toEqual(tasks);
   });
 
   it("lets the CEO answer from the team's data and keeps the chat history per project", async () => {
