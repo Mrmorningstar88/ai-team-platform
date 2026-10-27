@@ -33,7 +33,7 @@ function isMe(v: unknown): v is Me {
   );
 }
 
-async function call(method: "GET" | "POST", path: string, body?: object): Promise<ApiResult<unknown>> {
+async function call(method: "GET" | "POST" | "PATCH", path: string, body?: object): Promise<ApiResult<unknown>> {
   let res: Response;
   try {
     res = await fetch(path, {
@@ -53,7 +53,7 @@ async function call(method: "GET" | "POST", path: string, body?: object): Promis
   return { ok: false, status: res.status, error };
 }
 
-async function callMe(method: "GET" | "POST", path: string, body?: object): Promise<ApiResult<Me>> {
+async function callMe(method: "GET" | "POST" | "PATCH", path: string, body?: object): Promise<ApiResult<Me>> {
   const r = await call(method, path, body);
   if (!r.ok) return r;
   return isMe(r.data) ? { ok: true, data: r.data } : { ok: false, status: 500, error: "server" };
@@ -75,6 +75,12 @@ export const sendLead = (lead: { kind: "access" | "enterprise"; name: string; em
 
 export async function createOrg(name: string, goal: string): Promise<ApiResult<Org>> {
   const r = await call("POST", "/api/orgs", { name, goal });
+  if (!r.ok) return r;
+  return isOrg(r.data) ? { ok: true, data: r.data } : { ok: false, status: 500, error: "server" };
+}
+
+export async function renameOrg(orgId: string, name: string): Promise<ApiResult<Org>> {
+  const r = await call("PATCH", `/api/orgs/${encodeURIComponent(orgId)}`, { name });
   if (!r.ok) return r;
   return isOrg(r.data) ? { ok: true, data: r.data } : { ok: false, status: 500, error: "server" };
 }

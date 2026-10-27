@@ -277,3 +277,23 @@ export async function listUnlinkedOwnerFeeds(db: D1Database, userId: string, ema
     .all<{ id: string; project: string }>();
   return results;
 }
+
+/** Renames a project. Callers check that the user owns it. */
+export async function renameOrg(db: D1Database, orgId: string, userId: string, name: string): Promise<void> {
+  await db.batch([
+    db.prepare("UPDATE orgs SET name = ? WHERE id = ?").bind(name, orgId),
+    db.prepare("INSERT INTO audit_log (id, org_id, actor, action) VALUES (?, ?, ?, 'org:renamed')").bind(crypto.randomUUID(), orgId, `user:${userId}`),
+  ]);
+}
+
+/** The user's projects that show a team from GitHub, with that team's project name. */
+export async function listLinkedOrgs(db: D1Database, userId: string): Promise<{ id: string; name: string; project: string }[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT o.id, o.name, f.project FROM memberships m JOIN orgs o ON o.id = m.org_id
+       JOIN org_feeds l ON l.org_id = o.id JOIN team_feeds f ON f.id = l.feed_id WHERE m.user_id = ?`,
+    )
+    .bind(userId)
+    .all<{ id: string; name: string; project: string }>();
+  return results;
+}

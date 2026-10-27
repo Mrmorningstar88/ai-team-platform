@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { roleById, type ProcessStep } from "../../shared/roles";
-import { getAgents, getTeam, linkTeam, errorText, type Agent, type Org, type TeamMember, type TeamView } from "../api";
+import { getAgents, getTeam, linkTeam, renameOrg, errorText, type Agent, type Org, type TeamMember, type TeamView } from "../api";
 import { OfficeScene } from "../components/OfficeScene";
 import { ProcessFlow } from "../components/ProcessFlow";
 import { Sheet } from "../components/Sheet";
@@ -45,13 +45,15 @@ function ago(iso: string, now = Date.now()): string {
 /** What the detail sheet shows: a real team member, or one from the example scene. */
 interface Picked { name: string; role: string; task: string; step: number }
 
-export function Office({ org }: { org: Org }) {
+export function Office({ org, onRenamed }: { org: Org; onRenamed: (org: Org) => void }) {
   const [team, setTeam] = useState<TeamView | null>(null);
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<Picked | null>(null);
   const [member, setMember] = useState<TeamMember | null>(null);
   const [linkError, setLinkError] = useState("");
+  const [renaming, setRenaming] = useState(false);
+  const [renameError, setRenameError] = useState("");
   const role = open ? roleById(open.role) : undefined;
 
   useEffect(() => {
@@ -74,6 +76,15 @@ export function Office({ org }: { org: Org }) {
     if (t.ok) setTeam(t.data);
   }
 
+  async function rename(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setRenameError("");
+    const r = await renameOrg(org.id, String(new FormData(e.currentTarget).get("name") ?? ""));
+    if (!r.ok) return setRenameError(errorText(r.error));
+    setRenaming(false);
+    onRenamed(r.data);
+  }
+
   const feed = team?.feed;
   const busy = feed
     ? feed.agents.filter((a) => a.status === "working").length
@@ -83,7 +94,12 @@ export function Office({ org }: { org: Org }) {
   return (
     <>
       <header className="page-head">
-        <h1>{org.name}</h1>
+        <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+          <h1>{org.name}</h1>
+          {org.role === "owner" && (
+            <button type="button" className="btn btn-plain" onClick={() => { setRenameError(""); setRenaming(true); }}>Переименовать</button>
+          )}
+        </div>
         <p className="muted">
           {org.goal ? `Цель: ${org.goal}.` : feed ? "" : "Цель пока не задана."}
           {feed && ` В команде ${feed.agents.length}, сейчас работают ${busy}. Обновлено ${ago(new Date(feed.updated_ms).toISOString())}.`}
@@ -191,6 +207,19 @@ export function Office({ org }: { org: Org }) {
           <p className="muted">{role.pitch}</p>
           <p><strong>Сейчас:</strong> {open.task}</p>
           <ProcessFlow steps={role.steps} startAt={open.step} label={`Процесс: ${open.name}`} />
+        </Sheet>
+      )}
+
+      {renaming && (
+        <Sheet title="Переименовать проект" onClose={() => setRenaming(false)}>
+          <form className="auth-form" onSubmit={rename}>
+            <label className="field">
+              <span>Название</span>
+              <input name="name" required maxLength={80} defaultValue={org.name} />
+            </label>
+            {renameError && <p className="auth-error" role="alert">{renameError}</p>}
+            <button type="submit" className="btn btn-primary">Сохранить название</button>
+          </form>
         </Sheet>
       )}
 

@@ -24,9 +24,11 @@ import {
   listMessages,
   listOwnerFeeds,
   listPendingApprovals,
+  listLinkedOrgs,
   listUnlinkedOwnerFeeds,
   listUserOrgs,
   recordLoginFailure,
+  renameOrg,
   saveTeamFeed,
   useReset,
 } from "./repo";
@@ -142,7 +144,7 @@ async function adoptOwnFeeds(db: D1Database, user: { id: string; email: string }
     if (org && (await getOrgFeed(db, org.id))) continue;
     if (!org) {
       if (orgs.length >= MAX_ORGS_PER_USER) return;
-      const name = f.project.charAt(0).toUpperCase() + f.project.slice(1);
+      const name = projectTitle(f.project);
       org = { id: await createOrg(db, user.id, { name, goal: "" }), name, goal: "", role: "owner" };
       orgs.push(org);
     }
@@ -150,10 +152,22 @@ async function adoptOwnFeeds(db: D1Database, user: { id: string; email: string }
   }
 }
 
+const projectTitle = (project: string) => project.charAt(0).toUpperCase() + project.slice(1);
+
+/** A project named by the start of its team's name ("free") takes the full name ("Freekonomist"). */
+async function completeShortNames(db: D1Database, userId: string) {
+  for (const o of await listLinkedOrgs(db, userId)) {
+    const short = projectKey(o.name);
+    const full = projectKey(o.project);
+    if (short !== full && full.startsWith(short)) await renameOrg(db, o.id, userId, projectTitle(o.project));
+  }
+}
+
 async function me(c: Ctx, userId: string) {
   const user = await findUserById(c.env.DB, userId);
   if (!user) return null;
   await adoptOwnFeeds(c.env.DB, user);
+  await completeShortNames(c.env.DB, user.id);
   return { user, orgs: await listUserOrgs(c.env.DB, userId) };
 }
 
@@ -324,6 +338,19 @@ app.use("/api/orgs/:orgId/*", async (c, next) => {
   c.set("userId", userId);
   c.set("orgId", orgId);
   await next();
+});
+
+app.patch("/api/orgs/:orgId", async (c) => {
+  const userId = await currentUser(c);
+  if (!userId) return c.json({ error: "unauthorized" }, 401);
+  const org = (await listUserOrgs(c.env.DB, userId)).find((o) => o.id === c.req.param("orgId"));
+  if (!org) return c.json({ error: "not_found" }, 404);
+  if (org.role !== "owner") return c.json({ error: "forbidden" }, 403);
+  const body = await jsonBody(c);
+  const name = str(body?.name);
+  if (!name || name.length > 80) return c.json({ error: "invalid_org_name" }, 400);
+  await renameOrg(c.env.DB, org.id, userId, name);
+  return c.json({ ...org, name });
 });
 
 app.get("/api/orgs/:orgId/agents", async (c) => c.json(await listAgents(c.env.DB, c.get("orgId"))));

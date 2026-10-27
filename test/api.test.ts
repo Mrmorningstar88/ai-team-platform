@@ -382,7 +382,23 @@ describe("team feeds", () => {
       feedEnv,
     );
     const { orgs } = (await signup.json()) as { orgs: { name: string }[] };
-    expect(orgs.map((o) => o.name)).toEqual(["free"]);
+    // It takes the team's full name, since "free" was only its start.
+    expect(orgs.map((o) => o.name)).toEqual(["Freekonomist"]);
+  });
+
+  it("lets only the owner rename a project", async () => {
+    const rename = async (orgId: string, userId: string, name: string) =>
+      app.request(
+        `/api/orgs/${orgId}`,
+        { method: "PATCH", headers: { ...(await as(userId)), "Content-Type": "application/json" }, body: JSON.stringify({ name }) },
+        feedEnv,
+      );
+    expect((await rename("org-a", "u-b", "Mine now")).status).toBe(404);
+    expect((await rename("org-a", "u-a", "")).status).toBe(400);
+    const ok = await rename("org-a", "u-a", "freekonomist");
+    expect(ok.status).toBe(200);
+    const me = (await (await app.request("/api/me", { headers: await as("u-a") }, feedEnv)).json()) as { orgs: { name: string }[] };
+    expect(me.orgs.map((o) => o.name)).toEqual(["freekonomist"]);
   });
 
   it("offers a feed with another name and attaches it on request", async () => {
