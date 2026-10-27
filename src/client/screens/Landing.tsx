@@ -11,7 +11,7 @@ const DEMO_PEOPLE = DEMO_AGENTS.map((a) => ({
   id: a.id,
   name: a.name,
   icon: roleById(a.role)?.icon ?? "🤖",
-  color: SHIRT[a.role] ?? "#888",
+  color: SHIRT[a.role] ?? "var(--sys-gray)",
   mode: a.status,
   label: a.task,
 }));

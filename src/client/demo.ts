@@ -58,14 +58,14 @@ export const APPROVAL_PIPELINE = [
   { icon: "🌐", title: "Сайт", explain: "После вашего «да» правка сама публикуется, а CEO следит за результатом." },
 ];
 
-/** Shirt colours for people in the office scene, by role. */
+/** Shirt colours for people in the office scene, by role: system colors from tokens.css, never blue. */
 export const SHIRT: Record<string, string> = {
-  ceo: "#7a5bc0",
-  techlead: "#2f6fc4",
-  qa: "#1f8a9c",
-  seo: "#c07a1f",
-  content: "#c0466a",
-  analyst: "#2c8a5c",
+  ceo: "var(--sys-purple)",
+  techlead: "var(--sys-indigo)",
+  qa: "var(--sys-teal)",
+  seo: "var(--sys-orange)",
+  content: "var(--sys-pink)",
+  analyst: "var(--sys-green)",
 };
 
 export interface StoryBeat {

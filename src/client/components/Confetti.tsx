@@ -1,4 +1,5 @@
-const COLORS = ["#ff9500", "#34c759", "#0a84ff", "#ff2d55", "#ffcc00", "#af52de"];
+// System colors from tokens.css, so the burst follows light, dark and Increased Contrast.
+const COLORS = ["var(--sys-orange)", "var(--sys-green)", "var(--sys-indigo)", "var(--sys-pink)", "var(--sys-yellow)", "var(--sys-purple)"];
 const PIECES = 18;
 
 /** A one-shot burst of confetti around its parent's centre; the parent must be position: relative. */
