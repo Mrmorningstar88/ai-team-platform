@@ -30,6 +30,8 @@ const iconFor = (id: string) => ICONS.find(([re]) => re.test(id))?.[1] ?? "🤖"
 const COLORS = ["var(--sys-purple)", "var(--sys-indigo)", "var(--sys-teal)", "var(--sys-orange)", "var(--sys-pink)", "var(--sys-green)", "var(--sys-brown)", "var(--sys-mint)"];
 const colorFor = (id: string) => COLORS[[...id].reduce((n, ch) => n + ch.charCodeAt(0), 0) % COLORS.length]!;
 
+/** Cards a column shows before «Показать все», so one long column doesn't push the rest of the office off the screen. */
+const BOARD_PREVIEW = 3;
 const TASK_COLUMNS: { status: TaskStatus; icon: string; title: string }[] = [
   { status: "new", icon: "📥", title: "Ждут" },
   { status: "running", icon: "⚙️", title: "В работе" },
@@ -116,6 +118,7 @@ export function Office({ org, onRenamed }: { org: Org; onRenamed: (org: Org) => 
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [member, setMember] = useState<TeamMember | null>(null);
+  const [openCols, setOpenCols] = useState<TaskStatus[]>([]);
   const [starter, setStarter] = useState<Agent | null>(null);
   const [linkError, setLinkError] = useState("");
   const [renaming, setRenaming] = useState(false);
@@ -207,11 +210,12 @@ export function Office({ org, onRenamed }: { org: Org; onRenamed: (org: Org) => 
           ) : (
             <div className="board section-gap">
               {TASK_COLUMNS.map((col) => {
-                const items = feed.tasks.filter((t) => t.status === col.status);
+                const all = feed.tasks.filter((t) => t.status === col.status);
+                const items = openCols.includes(col.status) ? all : all.slice(0, BOARD_PREVIEW);
                 return (
                   <section key={col.status} className={`board-col col-${col.status}`} aria-label={col.title}>
-                    <h3><span aria-hidden>{col.icon}</span> {col.title} <span className="board-count">{items.length}</span></h3>
-                    {items.length === 0 && <p className="muted small">Пусто</p>}
+                    <h3><span aria-hidden>{col.icon}</span> {col.title} <span className="board-count">{all.length}</span></h3>
+                    {all.length === 0 && <p className="muted small">Пусто</p>}
                     {items.map((t, i) => (
                       <article key={`${t.title}-${i}`} className="board-card" style={{ animationDelay: `${i * 60}ms` }}>
                         <p>{t.title}</p>
@@ -219,6 +223,12 @@ export function Office({ org, onRenamed }: { org: Org; onRenamed: (org: Org) => 
                         {t.link && <a href={t.link} target="_blank" rel="noreferrer" className="small">Открыть PR</a>}
                       </article>
                     ))}
+                    {all.length > BOARD_PREVIEW && (
+                      <button type="button" className="btn btn-plain board-more" aria-expanded={items.length === all.length}
+                        onClick={() => setOpenCols((o) => (o.includes(col.status) ? o.filter((s) => s !== col.status) : [...o, col.status]))}>
+                        {items.length === all.length ? "Свернуть" : `Показать все (${all.length})`}
+                      </button>
+                    )}
                   </section>
                 );
               })}
