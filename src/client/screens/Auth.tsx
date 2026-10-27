@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from "react";
 import type { ProcessStep } from "../../shared/roles";
 import { errorText, forgotPassword, login, resetPassword, signup, type Me } from "../api";
+import { LeadSheet } from "../components/LeadSheet";
+import { Logo } from "../components/Logo";
 import { ProcessFlow } from "../components/ProcessFlow";
 
 const SIGNUP_STEPS: ProcessStep[] = [
@@ -17,7 +19,7 @@ const RESET_STEPS: ProcessStep[] = [
   { icon: "✅", title: "Вход", explain: "Сразу после этого вы в офисе своей команды." },
 ];
 
-type Mode = "login" | "signup" | "forgot" | "reset";
+export type Mode = "login" | "signup" | "forgot" | "reset";
 
 const INTRO: Record<Mode, string> = {
   signup: "Создайте организацию, и команда AI-сотрудников начнёт работать на вашу цель.",
@@ -38,10 +40,12 @@ interface Props {
   notice?: string;
   /** Token from a reset link (#reset=…), when the page was opened from the email. */
   resetToken?: string;
+  initialMode?: Mode;
 }
 
-export function Auth({ onSignedIn, notice, resetToken }: Props) {
-  const [mode, setMode] = useState<Mode>(resetToken ? "reset" : "signup");
+export function Auth({ onSignedIn, notice, resetToken, initialMode = "signup" }: Props) {
+  const [mode, setMode] = useState<Mode>(resetToken ? "reset" : initialMode);
+  const [askCode, setAskCode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(notice ?? "");
   const [sentTo, setSentTo] = useState("");
@@ -62,10 +66,10 @@ export function Auth({ onSignedIn, notice, resetToken }: Props) {
     const r =
       mode === "login" ? await login(get("email"), get("password"))
       : mode === "reset" ? await resetPassword(resetToken ?? "", get("password"))
-      : await signup({ name: get("name"), email: get("email"), password: get("password"), orgName: get("orgName") });
+      : await signup({ name: get("name"), email: get("email"), password: get("password"), orgName: get("orgName"), promo: get("promo") });
     setBusy(false);
     if (!r.ok) return setError(errorText(r.error));
-    if (mode === "reset") history.replaceState(null, "", window.location.pathname);
+    history.replaceState(null, "", window.location.pathname);
     onSignedIn(r.data);
   }
 
@@ -83,9 +87,9 @@ export function Auth({ onSignedIn, notice, resetToken }: Props) {
   return (
     <div className="auth">
       <div className="auth-card card">
-        <div className="auth-brand">
-          <span className="nav-brand-mark" aria-hidden>◎</span>
-          <h1>AI-команда</h1>
+        <div className="auth-brand row" style={{ justifyContent: "space-between" }}>
+          <a href="#" className="logo-link" aria-label="На главную"><Logo size={36} /></a>
+          <a href="#" className="btn btn-plain">← На главную</a>
         </div>
         <p className="muted">{INTRO[mode]}</p>
 
@@ -136,6 +140,13 @@ export function Auth({ onSignedIn, notice, resetToken }: Props) {
                 <input name="orgName" autoComplete="organization" required maxLength={80} />
               </label>
             )}
+            {mode === "signup" && (
+              <label className="field">
+                <span>Промокод</span>
+                <input name="promo" autoComplete="off" autoCapitalize="characters" required maxLength={64} />
+                <small className="muted">Регистрация пока открыта по промокодам.</small>
+              </label>
+            )}
 
             {error && <p className="auth-error" role="alert">{error}</p>}
 
@@ -144,6 +155,9 @@ export function Auth({ onSignedIn, notice, resetToken }: Props) {
             </button>
             {mode === "login" && (
               <button type="button" className="btn btn-plain" onClick={() => switchTo("forgot")}>Забыли пароль?</button>
+            )}
+            {mode === "signup" && (
+              <button type="button" className="btn btn-plain" onClick={() => setAskCode(true)}>Нет промокода? Получить</button>
             )}
             {(mode === "forgot" || mode === "reset") && (
               <button type="button" className="btn btn-plain" onClick={() => switchTo("login")}>Вернуться ко входу</button>
@@ -164,6 +178,7 @@ export function Auth({ onSignedIn, notice, resetToken }: Props) {
           <ProcessFlow steps={RESET_STEPS} label="Шаги восстановления пароля" />
         </section>
       )}
+      {askCode && <LeadSheet kind="access" onClose={() => setAskCode(false)} />}
     </div>
   );
 }

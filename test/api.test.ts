@@ -18,7 +18,7 @@ beforeEach(() => {
     INSERT INTO tasks (id, org_id, agent_id, title) VALUES ('t-a', 'org-a', 'ag-a', 'x'), ('t-b', 'org-b', 'ag-b', 'y');
     INSERT INTO approvals (id, org_id, task_id, summary) VALUES ('ap-a', 'org-a', 't-a', 'A change'), ('ap-b', 'org-b', 't-b', 'B change');
   `);
-  env = { DB: d1, SESSION_SECRET: SECRET };
+  env = { DB: d1, SESSION_SECRET: SECRET, SIGNUP_CODES: "EARLY, friends" };
 });
 
 async function as(userId: string) {
@@ -106,7 +106,7 @@ describe("accounts", () => {
   const login = (email: string, password: string) =>
     app.request("/api/auth/login", { method: "POST", headers: json, body: JSON.stringify({ email, password }) }, env);
   const cookieOf = (res: Response) => res.headers.get("Set-Cookie")?.split(";")[0] ?? "";
-  const owner = { email: "Owner@Example.com", password: "correct horse", name: "Арут", orgName: "freekonomist" };
+  const owner = { email: "Owner@Example.com", password: "correct horse", name: "Арут", orgName: "freekonomist", promo: "early" };
 
   it("signs up an owner with an organization and its starter team", async () => {
     const res = await signup(owner);
@@ -124,6 +124,11 @@ describe("accounts", () => {
     expect((await signup({ ...owner, email: "not-an-email" })).status).toBe(400);
     expect((await signup({ ...owner, password: "short" })).status).toBe(400);
     expect((await signup({ ...owner, orgName: "  " })).status).toBe(400);
+    // Early access: no code, a wrong code, or no codes configured at all.
+    expect((await signup({ ...owner, promo: undefined })).status).toBe(403);
+    expect((await signup({ ...owner, promo: "guess" })).status).toBe(403);
+    expect((await signup(owner, { ...env, SIGNUP_CODES: undefined })).status).toBe(403);
+    expect((await signup({ ...owner, email: "friend@example.com", promo: " Friends " })).status).toBe(201);
     expect((await app.request("/api/auth/signup", { method: "POST", body: JSON.stringify(owner) }, env)).status).toBe(400);
     expect((await signup(owner)).status).toBe(201);
     expect((await signup({ ...owner, email: "OWNER@example.com" })).status).toBe(409);
@@ -172,7 +177,7 @@ describe("accounts", () => {
   });
 
   it("works without a configured secret by generating one and keeping it", async () => {
-    const bare: Env = { DB: createTestDb().d1 };
+    const bare: Env = { DB: createTestDb().d1, SIGNUP_CODES: "EARLY" };
     const res = await signup(owner, bare);
     expect(res.status).toBe(201);
     const me = await app.request("/api/me", { headers: { Cookie: cookieOf(res) } }, bare);
@@ -184,7 +189,7 @@ describe("password reset", () => {
   const json = { "Content-Type": "application/json" };
   const post = (path: string, body: Record<string, unknown>, e: Env) =>
     app.request(path, { method: "POST", headers: json, body: JSON.stringify(body) }, e);
-  const owner = { email: "owner@example.com", password: "correct horse", name: "Арут", orgName: "freekonomist" };
+  const owner = { email: "owner@example.com", password: "correct horse", name: "Арут", orgName: "freekonomist", promo: "early" };
 
   function withOutbox() {
     const outbox: Mail[] = [];
@@ -228,3 +233,26 @@ describe("password reset", () => {
   });
 });
 
+describe("landing requests", () => {
+  const json = { "Content-Type": "application/json" };
+  const lead = (body: Record<string, unknown>, e: Env = env) =>
+    app.request("/api/leads", { method: "POST", headers: json, body: JSON.stringify(body) }, e);
+
+  it("stores a valid request and emails it to the owner when configured", async () => {
+    const outbox: Mail[] = [];
+    const e: Env = { ...env, LEADS_EMAIL: "owner@example.com", sendMail: async (m) => { outbox.push(m); return true; } };
+    expect((await lead({ kind: "enterprise", name: "Анна", email: "anna@corp.com", company: "Corp", message: "Нужен колл-центр" }, e)).status).toBe(201);
+    expect(outbox).toHaveLength(1);
+    expect(outbox[0]!.to).toBe("owner@example.com");
+    expect(outbox[0]!.text).toContain("anna@corp.com");
+    // Without email settings the request is still saved.
+    expect((await lead({ kind: "access", name: "Борис", email: "b@example.com" })).status).toBe(201);
+  });
+
+  it("rejects bad input", async () => {
+    expect((await lead({ kind: "spam", name: "A", email: "a@example.com" })).status).toBe(400);
+    expect((await lead({ kind: "access", name: "", email: "a@example.com" })).status).toBe(400);
+    expect((await lead({ kind: "access", name: "A", email: "nope" })).status).toBe(400);
+    expect((await lead({ kind: "access", name: "A", email: "a@example.com", message: "x".repeat(2001) })).status).toBe(400);
+  });
+});

@@ -1,10 +1,12 @@
 import { Hono, type Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import { resendSender, resetMail, type SendMail } from "./email";
+import { leadMail, resendSender, resetMail, type SendMail } from "./email";
 import { hashPassword, randomSecret, sha256, verifyPassword } from "./password";
 import {
+  addLead,
   addOwnerMessage,
   clearLoginFailures,
+  countRecentLeads,
   countRecentLoginFailures,
   countRecentResets,
   createAccount,
@@ -29,6 +31,10 @@ export interface Env {
   DB: D1Database;
   /** Optional; when unset, a secret is generated once and kept in the database. */
   SESSION_SECRET?: string;
+  /** Comma-separated promo codes that allow sign-up; sign-up is closed when unset. */
+  SIGNUP_CODES?: string;
+  /** Where landing-page requests are emailed; they are stored either way. */
+  LEADS_EMAIL?: string;
   /** Resend API key; needed for password reset emails. */
   RESEND_API_KEY?: string;
   /** Sender, e.g. "AI-команда <noreply@tamania.io>"; the domain must be verified in Resend. */
@@ -45,6 +51,8 @@ const SESSION_DAYS = 30;
 const MAX_FAILURES = 10;
 const FAILURE_WINDOW_MS = 15 * 60_000;
 const MAX_ORGS_PER_USER = 20;
+/** A site-wide cap on landing requests, so a bot can't flood the table or the inbox. */
+const MAX_LEADS_PER_HOUR = 60;
 const RESET_TTL_MS = 60 * 60_000;
 const MAX_RESETS_PER_HOUR = 3;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -60,6 +68,14 @@ app.use("/api/*", async (c, next) => {
   await ensureSchema(c.env.DB);
   await next();
 });
+
+/** The configured promo code matching `code` (case-insensitive), or null. */
+function matchPromo(env: Env, code: string): string | null {
+  const wanted = code.trim().toUpperCase();
+  if (!wanted) return null;
+  const codes = (env.SIGNUP_CODES ?? "").split(",").map((c) => c.trim().toUpperCase()).filter(Boolean);
+  return codes.includes(wanted) ? wanted : null;
+}
 
 async function sessionSecret(env: Env): Promise<string> {
   return env.SESSION_SECRET || getOrCreateSetting(env.DB, "session_secret", randomSecret);
@@ -111,8 +127,11 @@ app.post("/api/auth/signup", async (c) => {
   if (password.length < 8 || password.length > 128) return c.json({ error: "weak_password" }, 400);
   if (!name || name.length > 80) return c.json({ error: "invalid_name" }, 400);
   if (!orgName || orgName.length > 80) return c.json({ error: "invalid_org_name" }, 400);
+  // Early access: only people with a promo code can create an account.
+  const promo = matchPromo(c.env, str(body.promo).slice(0, 64));
+  if (!promo) return c.json({ error: "invalid_promo" }, 403);
 
-  const created = await createAccount(c.env.DB, { email, name, orgName, passwordHash: await hashPassword(password) });
+  const created = await createAccount(c.env.DB, { email, name, orgName, promo, passwordHash: await hashPassword(password) });
   if (!created) return c.json({ error: "email_taken" }, 409);
   await startSession(c, created.userId);
   return c.json(await me(c, created.userId), 201);
@@ -181,6 +200,30 @@ app.post("/api/auth/reset", async (c) => {
   if (!userId) return c.json({ error: "invalid_reset_link" }, 400);
   await startSession(c, userId);
   return c.json(await me(c, userId));
+});
+
+// Landing page: "no promo code yet" and corporate-plan requests. Public, so input is capped.
+app.post("/api/leads", async (c) => {
+  const body = await jsonBody(c);
+  if (!body) return c.json({ error: "invalid_body" }, 400);
+  const kind = body.kind === "enterprise" ? "enterprise" : body.kind === "access" ? "access" : null;
+  const name = str(body.name);
+  const email = str(body.email).toLowerCase();
+  const company = str(body.company);
+  const message = str(body.message);
+  if (!kind) return c.json({ error: "invalid_body" }, 400);
+  if (!name || name.length > 80) return c.json({ error: "invalid_name" }, 400);
+  if (!EMAIL_RE.test(email) || email.length > 254) return c.json({ error: "invalid_email" }, 400);
+  if (company.length > 120 || message.length > 2000) return c.json({ error: "too_long" }, 400);
+  const now = Date.now();
+  if ((await countRecentLeads(c.env.DB, now - 60 * 60_000)) >= MAX_LEADS_PER_HOUR) return c.json({ error: "try_later" }, 429);
+
+  const lead = { kind, name, email, company, message } as const;
+  await addLead(c.env.DB, lead, now);
+  const send = mailer(c.env);
+  // The request is already saved; a failed notification email is not the visitor's problem.
+  if (send && c.env.LEADS_EMAIL) await send(leadMail(c.env.LEADS_EMAIL, lead)).catch(() => false);
+  return c.json({ ok: true }, 201);
 });
 
 app.get("/api/me", async (c) => {

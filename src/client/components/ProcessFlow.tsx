@@ -51,7 +51,7 @@ export function ProcessFlow({ steps, startAt = 0, label }: Props) {
 
   return (
     <div className="flow" role="group" aria-label={label}>
-      <div className="flow-track">
+      <div className={`flow-track ${steps.length > 4 ? "many" : ""}`}>
         <div className="flow-line" style={{ left: `${inset}%`, right: `${inset}%` }} />
         <div className="flow-line-fill" style={{ left: `${inset}%`, width: `${(100 - 2 * inset) * (pct / 100)}%` }} />
         <div className="flow-token" style={{ left: tokenLeft }} aria-hidden />

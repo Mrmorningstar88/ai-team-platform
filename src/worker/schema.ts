@@ -86,6 +86,16 @@ export const SCHEMA: string[] = [
     created_ms INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS password_resets_user ON password_resets(user_id, created_ms)`,
+  `CREATE TABLE IF NOT EXISTS leads (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('access', 'enterprise')),
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    company TEXT NOT NULL DEFAULT '',
+    message TEXT NOT NULL DEFAULT '',
+    created_ms INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS leads_created ON leads(created_ms)`,
 ];
 
 const ready = new WeakSet<D1Database>();

@@ -116,7 +116,7 @@ function orgStatements(db: D1Database, orgId: string, userId: string, org: { nam
  */
 export async function createAccount(
   db: D1Database,
-  input: { email: string; name: string; passwordHash: string; orgName: string },
+  input: { email: string; name: string; passwordHash: string; orgName: string; promo: string },
 ): Promise<{ userId: string; orgId: string } | null> {
   if (await findUserByEmail(db, input.email)) return null;
   const userId = crypto.randomUUID();
@@ -125,6 +125,8 @@ export async function createAccount(
     await db.batch([
       db.prepare("INSERT INTO users (id, email, name, password_hash) VALUES (?, ?, ?, ?)").bind(userId, input.email, input.name, input.passwordHash),
       ...orgStatements(db, orgId, userId, { name: input.orgName, goal: "" }),
+      // Which promo code brought this owner in, for later sales reports.
+      db.prepare("INSERT INTO audit_log (id, org_id, actor, action) VALUES (?, ?, ?, ?)").bind(crypto.randomUUID(), orgId, `user:${userId}`, `signup:promo:${input.promo}`),
     ]);
   } catch (e) {
     // Two sign-ups racing for one email: the UNIQUE constraint decides.
@@ -190,6 +192,22 @@ export async function useReset(db: D1Database, tokenHash: string, passwordHash: 
     db.prepare("DELETE FROM password_resets WHERE user_id = ?").bind(row.user_id),
   ]);
   return results[1]?.meta.changes ? row.user_id : null;
+}
+
+// ---- Landing page requests ----
+
+export interface Lead { kind: "access" | "enterprise"; name: string; email: string; company: string; message: string }
+
+export async function countRecentLeads(db: D1Database, sinceMs: number): Promise<number> {
+  const row = await db.prepare("SELECT COUNT(*) AS n FROM leads WHERE created_ms > ?").bind(sinceMs).first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+export async function addLead(db: D1Database, lead: Lead, nowMs: number): Promise<void> {
+  await db
+    .prepare("INSERT INTO leads (id, kind, name, email, company, message, created_ms) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .bind(crypto.randomUUID(), lead.kind, lead.name, lead.email, lead.company, lead.message, nowMs)
+    .run();
 }
 
 /** Reads a server-generated setting, creating it with `make()` on first use. */

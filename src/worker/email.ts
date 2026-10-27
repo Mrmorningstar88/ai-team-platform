@@ -30,3 +30,14 @@ export function resetMail(to: string, name: string, link: string): Mail {
       `<p>Если вы не просили сменить пароль, просто удалите это письмо.</p>`,
   };
 }
+
+export function leadMail(to: string, lead: { kind: string; name: string; email: string; company: string; message: string }): Mail {
+  const title = lead.kind === "enterprise" ? "Заявка на корпоративный тариф" : "Заявка на ранний доступ";
+  const lines = [`Имя: ${lead.name}`, `Почта: ${lead.email}`, `Компания: ${lead.company || "—"}`, `Сообщение: ${lead.message || "—"}`];
+  return {
+    to,
+    subject: `${title}: ${lead.name}`,
+    text: `${title}\n\n${lines.join("\n")}`,
+    html: `<p><strong>${escapeHtml(title)}</strong></p>` + lines.map((l) => `<p>${escapeHtml(l)}</p>`).join(""),
+  };
+}
