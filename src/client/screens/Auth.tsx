@@ -49,11 +49,15 @@ export function Auth({ onSignedIn, notice, resetToken, initialMode = "signup" }:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(notice ?? "");
   const [sentTo, setSentTo] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const get = (k: string) => String(f.get(k) ?? "");
+    if ((mode === "signup" || mode === "reset") && get("password") !== get("password2")) {
+      return setError("Пароли не совпадают. Введите один и тот же пароль дважды.");
+    }
     setBusy(true);
     setError("");
     if (mode === "forgot") {
@@ -76,6 +80,7 @@ export function Auth({ onSignedIn, notice, resetToken, initialMode = "signup" }:
   function switchTo(m: Mode) {
     setMode(m);
     setError("");
+    setShowPassword(false);
     setSentTo("");
   }
 
@@ -121,17 +126,41 @@ export function Auth({ onSignedIn, notice, resetToken, initialMode = "signup" }:
               </label>
             )}
             {needsPassword && (
+              <div className="field">
+                <label htmlFor="password">{mode === "reset" ? "Новый пароль" : "Пароль"}</label>
+                <div className="password-row">
+                  <input
+                    id="password"
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete={newPassword ? "new-password" : "current-password"}
+                    required
+                    minLength={newPassword ? 8 : undefined}
+                    maxLength={128}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-plain password-toggle"
+                    aria-pressed={showPassword}
+                    onClick={() => setShowPassword((v) => !v)}
+                  >
+                    {showPassword ? "Скрыть" : "Показать"}
+                  </button>
+                </div>
+                {newPassword && <small className="muted">Не меньше 8 символов</small>}
+              </div>
+            )}
+            {newPassword && (
               <label className="field">
-                <span>{mode === "reset" ? "Новый пароль" : "Пароль"}</span>
+                <span>Повторите пароль</span>
                 <input
-                  name="password"
-                  type="password"
-                  autoComplete={newPassword ? "new-password" : "current-password"}
+                  name="password2"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="new-password"
                   required
-                  minLength={newPassword ? 8 : undefined}
+                  minLength={8}
                   maxLength={128}
                 />
-                {newPassword && <small className="muted">Не меньше 8 символов</small>}
               </label>
             )}
             {mode === "signup" && (

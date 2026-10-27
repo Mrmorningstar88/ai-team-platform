@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { roleById } from "../../shared/roles";
 import { useReducedMotion } from "../components/useReducedMotion";
-import { DEMO_AGENTS, DEMO_MESSAGES, type DemoMessage } from "../demo";
+import { DEMO_AGENTS, type DemoMessage } from "../demo";
 
 const MAX_CHARS = 4000;
 const READ_MS = 900;
@@ -26,6 +26,19 @@ function routeFor(text: string): string[] {
 const nameOf = (id: string) => DEMO_AGENTS.find((a) => a.id === id)?.name ?? id;
 const iconOf = (id: string) => roleById(DEMO_AGENTS.find((a) => a.id === id)?.role ?? "")?.icon ?? "🤖";
 
+// The browser's own speech recognition (Chrome, Safari, Edge); no audio leaves for our servers.
+interface Recognition {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((e: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
+const SpeechApi = (window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition })
+  .SpeechRecognition ?? (window as unknown as { webkitSpeechRecognition?: new () => Recognition }).webkitSpeechRecognition;
+
 function DelegationStrip({ to }: { to: string[] }) {
   return (
     <div className="delegate" aria-label={`CEO передаёт задачу: ${to.map(nameOf).join(", ")}`}>
@@ -47,11 +60,34 @@ function DelegationStrip({ to }: { to: string[] }) {
 
 export function Chat() {
   const reduced = useReducedMotion();
-  const [messages, setMessages] = useState<ChatMessage[]>(DEMO_MESSAGES);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [phase, setPhase] = useState<"idle" | "reading" | "delegating">("idle");
   const [route, setRoute] = useState<string[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
+  const [listening, setListening] = useState(false);
+  const recRef = useRef<Recognition | null>(null);
+
+  function toggleVoice() {
+    if (listening) return recRef.current?.stop();
+    if (!SpeechApi) return;
+    const rec = new SpeechApi();
+    rec.lang = "ru-RU";
+    rec.interimResults = true;
+    rec.continuous = true;
+    const before = draft.trim() ? `${draft.trim()} ` : "";
+    rec.onresult = (e) => {
+      let text = "";
+      for (let i = 0; i < e.results.length; i++) text += e.results[i]![0]!.transcript;
+      setDraft((before + text).slice(0, MAX_CHARS));
+    };
+    rec.onend = () => setListening(false);
+    recRef.current = rec;
+    rec.start();
+    setListening(true);
+  }
+
+  useEffect(() => () => recRef.current?.stop(), []);
 
   // Braces matter: newer browsers return a promise from scrollIntoView, which must not become the effect's cleanup.
   useEffect(() => {
@@ -60,6 +96,7 @@ export function Chat() {
 
   function send(e: FormEvent) {
     e.preventDefault();
+    recRef.current?.stop();
     const body = draft.trim();
     if (!body || phase !== "idle") return;
     const to = routeFor(body);
@@ -71,7 +108,7 @@ export function Chat() {
     window.setTimeout(() => {
       setMessages((m) => [
         ...m,
-        { author: "ceo", body: "Принял. Задачу уже взяли в работу, результат пришлю сюда и в утренний отчёт.", delegated: to },
+        { author: "ceo", body: "Это пример: так CEO будет передавать задачи. Настоящий CEO ещё не подключён, поэтому задача никуда не ушла.", delegated: to },
       ]);
       setPhase("idle");
     }, READ_MS + DELEGATE_MS);
@@ -82,6 +119,7 @@ export function Chat() {
       <header className="page-head">
         <h1>Чат с CEO</h1>
         <p className="muted">Пишите как руководителю. Вы увидите, кому CEO передаёт вашу задачу.</p>
+        <p className="pill" style={{ marginTop: 8 }}>Пример: настоящий CEO подключается следующим шагом</p>
       </header>
       <div className="chat" aria-live="polite">
         {messages.map((m, i) => (
@@ -112,6 +150,16 @@ export function Chat() {
           placeholder="Например: почему упали переходы?"
           aria-label="Сообщение CEO"
         />
+        {SpeechApi && (
+          <button
+            type="button"
+            className={`btn btn-secondary mic ${listening ? "on" : ""}`}
+            aria-pressed={listening}
+            onClick={toggleVoice}
+          >
+            {listening ? "■ Стоп" : "🎤 Сказать"}
+          </button>
+        )}
         <button type="submit" className="btn btn-primary" disabled={!draft.trim() || phase !== "idle"}>Отправить</button>
       </form>
     </>

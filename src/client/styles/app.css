@@ -179,6 +179,11 @@ button { font: inherit; color: inherit; }
   border: 1px solid var(--separator); background: var(--surface); color: var(--text); font: inherit;
 }
 @media (max-width: 760px) { .composer { bottom: 88px; } }
+.composer input { min-width: 0; }
+.mic { flex: none; }
+.mic.on { color: var(--bad); animation: mic-pulse 1.2s var(--ease) infinite alternate; }
+@keyframes mic-pulse { from { box-shadow: 0 0 0 0 transparent; } to { box-shadow: 0 0 0 6px color-mix(in srgb, var(--bad) 25%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .mic.on { animation: none; } }
 
 /* ---------- Approvals ---------- */
 
@@ -385,7 +390,7 @@ button { font: inherit; color: inherit; }
 .segmented button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
 
 .field { display: flex; flex-direction: column; gap: 6px; }
-.field > span { font-weight: 600; font-size: 15px; }
+.field > span, .field > label { font-weight: 600; font-size: 15px; }
 .field input {
   min-height: var(--tap); padding: 0 14px; border-radius: 12px; font: inherit; color: var(--text);
   background: var(--surface-2); border: 1px solid var(--separator);
@@ -393,6 +398,9 @@ button { font: inherit; color: inherit; }
 }
 .field input:focus { border-color: var(--accent); }
 .field small { font-size: 13px; }
+.password-row { display: flex; gap: 8px; align-items: stretch; }
+.password-row input { flex: 1; min-width: 0; }
+.password-toggle { min-width: 96px; flex: none; }
 
 .auth-error { color: var(--bad); font-size: 15px; animation: auth-in var(--t-card) var(--ease); }
 

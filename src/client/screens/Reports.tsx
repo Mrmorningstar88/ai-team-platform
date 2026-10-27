@@ -1,60 +1,62 @@
 import { useEffect, useState } from "react";
-import { useReducedMotion } from "../components/useReducedMotion";
-import { DEMO_KPIS } from "../demo";
+import type { ProcessStep } from "../../shared/roles";
+import { getTeam, type Org, type TeamReport } from "../api";
+import { ProcessFlow } from "../components/ProcessFlow";
 
-const COUNT_MS = 900;
+const REPORT_STEPS: ProcessStep[] = [
+  { icon: "📊", title: "Аналитик считает", explain: "Аналитик и QA вашей команды собирают цифры и проверки в GitHub." },
+  { icon: "📝", title: "Отчёт в GitHub", explain: "Каждый отчёт — открытая задача с меткой report или qa в вашем репозитории." },
+  { icon: "📮", title: "Связной приносит", explain: "Раз в час связной забирает открытые отчёты и отправляет сюда." },
+  { icon: "👀", title: "Вы читаете", explain: "Здесь видно каждый отчёт целиком, со ссылкой на оригинал." },
+];
 
-function CountUp({ value, decimals }: { value: number; decimals: number }) {
-  const reduced = useReducedMotion();
-  const [shown, setShown] = useState(reduced ? value : 0);
+const dateText = (iso: string) => {
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? "" : new Date(t).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+};
+
+export function Reports({ org }: { org: Org }) {
+  const [reports, setReports] = useState<TeamReport[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
   useEffect(() => {
-    if (reduced) {
-      setShown(value);
-      return;
-    }
-    let frame = 0;
-    const start = performance.now();
-    const tick = (now: number) => {
-      const t = Math.min(1, (now - start) / COUNT_MS);
-      setShown(value * (1 - (1 - t) ** 3));
-      if (t < 1) frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [value, reduced]);
-  return <>{shown.toLocaleString("ru-RU", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}</>;
-}
+    let live = true;
+    void getTeam(org.id).then((r) => {
+      if (!live) return;
+      if (r.ok) setReports(r.data.feed?.reports ?? []);
+      else setFailed(true);
+    });
+    return () => { live = false; };
+  }, [org.id]);
 
-export function Reports() {
   return (
     <>
       <header className="page-head">
         <h1>Отчёты</h1>
-        <p className="muted">Главные цифры за неделю. Под каждой цифрой аналитик объясняет, почему она изменилась.</p>
+        <p className="muted">Отчёты вашей команды. Здесь только настоящие данные из вашего репозитория.</p>
       </header>
-      <div className="grid">
-        {DEMO_KPIS.map((k) => {
-          const max = Math.max(...k.series);
-          const decimals = Number.isInteger(k.value) ? 0 : 1;
-          // For spend, going down is good.
-          const good = k.suffix === " $" ? k.delta < 0 : k.delta > 0;
-          return (
-            <article key={k.label} className="card stack">
-              <p className="muted small">{k.label}</p>
-              <div className="kpi-value"><CountUp value={k.value} decimals={decimals} />{k.suffix}</div>
-              <p className={good ? "delta-up" : "delta-down"}>
-                {k.delta > 0 ? "▲" : "▼"} {Math.abs(k.delta)}% за неделю
-              </p>
-              <div className="bars" aria-hidden>
-                {k.series.map((v, i) => (
-                  <div key={i} className="bar" style={{ height: `${(v / max) * 100}%`, animationDelay: `${i * 60}ms` }} />
-                ))}
-              </div>
-              <p className="small"><strong>Почему:</strong> {k.why}</p>
+
+      {failed && <p className="auth-error" role="alert">Не удалось загрузить отчёты. Обновите страницу.</p>}
+      {!failed && reports === null && <span className="typing" aria-label="Загрузка"><i /><i /><i /></span>}
+      {reports?.length === 0 && <p className="muted" style={{ marginBottom: 24 }}>Отчётов пока нет. Они появятся, как только команда их напишет.</p>}
+
+      {reports && reports.length > 0 && (
+        <div className="stack" style={{ marginBottom: 32 }}>
+          {reports.map((r) => (
+            <article key={r.link || r.title} className="card stack">
+              {r.updated && <p className="muted small">{dateText(r.updated)}</p>}
+              <h3>{r.title}</h3>
+              <p className="small" style={{ whiteSpace: "pre-line" }}>{r.summary}</p>
+              {r.link && <a className="btn btn-plain" href={r.link} target="_blank" rel="noreferrer">Открыть отчёт</a>}
             </article>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
+
+      <section className="card" aria-labelledby="reports-how">
+        <h2 id="reports-how">Откуда берутся отчёты</h2>
+        <ProcessFlow steps={REPORT_STEPS} label="Как отчёт попадает сюда" />
+      </section>
     </>
   );
 }

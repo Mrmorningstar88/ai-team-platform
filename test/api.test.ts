@@ -339,6 +339,52 @@ describe("team feeds", () => {
     expect((await app.request("/api/orgs/org-a/team", { headers: await as("u-b") }, feedEnv)).status).toBe(404);
   });
 
+  it("gives the owner a project for each of their teams on sign-up", async () => {
+    const t = await token();
+    await ingest(feed("freekonomist", { owner_email: "c@example.com" }), t);
+    await ingest(feed("brainax", { owner_email: "c@example.com" }), t);
+    const signup = await app.request(
+      "/api/auth/signup",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "c@example.com", password: "long-enough", name: "C", orgName: "Freekonomist.com", promo: "EARLY" }),
+      },
+      feedEnv,
+    );
+    expect(signup.status).toBe(201);
+    const { orgs } = (await signup.json()) as { orgs: { id: string; name: string }[] };
+    expect(orgs.map((o) => o.name)).toEqual(["Freekonomist.com", "Brainax"]);
+
+    // Each project shows its own team, and signing in again adds nothing twice.
+    const cookie = { Cookie: signup.headers.get("Set-Cookie")!.split(";")[0] ?? "" };
+    for (const [i, project] of ["freekonomist", "brainax"].entries()) {
+      const team = (await (await app.request(`/api/orgs/${orgs[i]!.id}/team`, { headers: cookie }, feedEnv)).json()) as { feed: { project: string } };
+      expect(team.feed.project).toBe(project);
+    }
+    const again = (await (await app.request("/api/me", { headers: cookie }, feedEnv)).json()) as { orgs: unknown[] };
+    expect(again.orgs).toHaveLength(2);
+
+    // Someone else's teams never become their projects.
+    const other = (await (await app.request("/api/me", { headers: await as("u-b") }, feedEnv)).json()) as { orgs: { name: string }[] };
+    expect(other.orgs.map((o) => o.name)).toEqual(["B Inc"]);
+  });
+
+  it("treats a short project name as the start of the team's name", async () => {
+    await ingest(feed("freekonomist", { owner_email: "c@example.com" }), await token());
+    const signup = await app.request(
+      "/api/auth/signup",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "c@example.com", password: "long-enough", name: "C", orgName: "free", promo: "EARLY" }),
+      },
+      feedEnv,
+    );
+    const { orgs } = (await signup.json()) as { orgs: { name: string }[] };
+    expect(orgs.map((o) => o.name)).toEqual(["free"]);
+  });
+
   it("offers a feed with another name and attaches it on request", async () => {
     await ingest(feed("brainax"), await token());
     const before = (await (await app.request("/api/orgs/org-a/team", { headers: await as("u-a") }, feedEnv)).json()) as { feed: unknown; available: { id: string }[] };

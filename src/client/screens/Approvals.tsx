@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { Confetti } from "../components/Confetti";
 import { ProcessFlow } from "../components/ProcessFlow";
 import { useReducedMotion } from "../components/useReducedMotion";
-import { APPROVAL_PIPELINE, DEMO_APPROVALS } from "../demo";
+import { APPROVAL_PIPELINE, type DemoApproval } from "../demo";
 
 const LEAVE_MS = 240;
 const FLY_MS = 750;
@@ -17,7 +17,7 @@ interface Flight {
 
 export function Approvals({ onCountChange }: { onCountChange: (n: number) => void }) {
   const reduced = useReducedMotion();
-  const [items, setItems] = useState(DEMO_APPROVALS);
+  const [items, setItems] = useState<DemoApproval[]>([]);
   const [leaving, setLeaving] = useState<{ id: string; approved: boolean } | null>(null);
   const [lastDone, setLastDone] = useState<{ text: string; approved: boolean; key: number } | null>(null);
   const [flight, setFlight] = useState<Flight | null>(null);
@@ -93,7 +93,7 @@ export function Approvals({ onCountChange }: { onCountChange: (n: number) => voi
       )}
 
       <div className="stack">
-        {items.length === 0 && <p className="muted">На сегодня всё. Следующая ссылка придёт завтра утром.</p>}
+        {items.length === 0 && <p className="muted">Сейчас нечего одобрять. Когда команда подготовит правку, она появится здесь.</p>}
         {items.map((a) => (
           <article
             key={a.id}
