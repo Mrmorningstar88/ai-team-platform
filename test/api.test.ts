@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import type { Mail } from "../src/worker/email";
 import { app, type Env } from "../src/worker/index";
 import { signSession, verifySession } from "../src/worker/session";
 import { createTestDb } from "./d1";
@@ -178,3 +179,52 @@ describe("accounts", () => {
     expect(me.status).toBe(200);
   });
 });
+
+describe("password reset", () => {
+  const json = { "Content-Type": "application/json" };
+  const post = (path: string, body: Record<string, unknown>, e: Env) =>
+    app.request(path, { method: "POST", headers: json, body: JSON.stringify(body) }, e);
+  const owner = { email: "owner@example.com", password: "correct horse", name: "Арут", orgName: "freekonomist" };
+
+  function withOutbox() {
+    const outbox: Mail[] = [];
+    const e: Env = { ...env, sendMail: async (m) => { outbox.push(m); return true; } };
+    const linkToken = () => /#reset=([\w-]+)/.exec(outbox.at(-1)?.text ?? "")?.[1] ?? "";
+    return { e, outbox, linkToken };
+  }
+
+  it("emails a one-time link that sets a new password and signs in", async () => {
+    const { e, outbox, linkToken } = withOutbox();
+    await post("/api/auth/signup", owner, e);
+    expect((await post("/api/auth/forgot", { email: "OWNER@example.com" }, e)).status).toBe(200);
+    expect(outbox).toHaveLength(1);
+    expect(outbox[0]!.to).toBe("owner@example.com");
+    const token = linkToken();
+    expect(token).not.toBe("");
+
+    expect((await post("/api/auth/reset", { token, password: "short" }, e)).status).toBe(400);
+    const res = await post("/api/auth/reset", { token, password: "new password 1" }, e);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Set-Cookie")).toMatch(/sid=/);
+    // The link works once, and the new password replaces the old one.
+    expect((await post("/api/auth/reset", { token, password: "new password 2" }, e)).status).toBe(400);
+    expect((await post("/api/auth/login", { email: owner.email, password: "correct horse" }, e)).status).toBe(401);
+    expect((await post("/api/auth/login", { email: owner.email, password: "new password 1" }, e)).status).toBe(200);
+  });
+
+  it("answers the same for unknown emails and limits how many links are sent", async () => {
+    const { e, outbox } = withOutbox();
+    expect((await post("/api/auth/forgot", { email: "nobody@example.com" }, e)).status).toBe(200);
+    expect(outbox).toHaveLength(0);
+    await post("/api/auth/signup", owner, e);
+    for (let i = 0; i < 5; i++) expect((await post("/api/auth/forgot", { email: owner.email }, e)).status).toBe(200);
+    expect(outbox).toHaveLength(3);
+  });
+
+  it("rejects made-up links and says when email is not set up", async () => {
+    const { e } = withOutbox();
+    expect((await post("/api/auth/reset", { token: "made-up", password: "new password 1" }, e)).status).toBe(400);
+    expect((await post("/api/auth/forgot", { email: owner.email }, env)).status).toBe(503);
+  });
+});
+

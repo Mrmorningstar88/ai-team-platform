@@ -79,6 +79,13 @@ export const SCHEMA: string[] = [
     at_ms INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS login_failures_email ON login_failures(email, at_ms)`,
+  `CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_ms INTEGER NOT NULL,
+    created_ms INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS password_resets_user ON password_resets(user_id, created_ms)`,
 ];
 
 const ready = new WeakSet<D1Database>();

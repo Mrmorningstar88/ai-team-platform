@@ -66,6 +66,10 @@ export const login = (email: string, password: string) => callMe("POST", "/api/a
 export const signup = (input: { name: string; email: string; password: string; orgName: string }) =>
   callMe("POST", "/api/auth/signup", input);
 
+export const forgotPassword = (email: string) => call("POST", "/api/auth/forgot", { email });
+
+export const resetPassword = (token: string, password: string) => callMe("POST", "/api/auth/reset", { token, password });
+
 export async function createOrg(name: string, goal: string): Promise<ApiResult<Org>> {
   const r = await call("POST", "/api/orgs", { name, goal });
   if (!r.ok) return r;
@@ -92,6 +96,9 @@ export const ERROR_TEXT: Record<string, string> = {
   invalid_credentials: "Почта или пароль не подходят.",
   too_many_attempts: "Слишком много попыток. Подождите 15 минут и попробуйте снова.",
   no_database: "Сервер ещё не подключён к базе данных. Владельцу нужно добавить базу D1 в настройках Cloudflare.",
+  invalid_reset_link: "Ссылка устарела или уже использована. Запросите новую.",
+  email_not_configured: "Отправка писем ещё не настроена. Напишите администратору.",
+  email_failed: "Не получилось отправить письмо. Попробуйте через минуту.",
   network: "Нет связи с сервером. Проверьте интернет и попробуйте снова.",
 };
 
