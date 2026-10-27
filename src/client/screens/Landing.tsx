@@ -1,9 +1,20 @@
 import { useState } from "react";
-import { ROLES, type ProcessStep } from "../../shared/roles";
+import { ROLES, roleById, type ProcessStep } from "../../shared/roles";
 import { LeadSheet } from "../components/LeadSheet";
 import { Logo } from "../components/Logo";
 import { OfficeScene } from "../components/OfficeScene";
 import { ProcessFlow } from "../components/ProcessFlow";
+import { DEMO_AGENTS, SHIRT, STORY } from "../demo";
+
+// The landing shows an example office; inside a project only the owner's own team is shown.
+const DEMO_PEOPLE = DEMO_AGENTS.map((a) => ({
+  id: a.id,
+  name: a.name,
+  icon: roleById(a.role)?.icon ?? "🤖",
+  color: SHIRT[a.role] ?? "#888",
+  mode: a.status,
+  label: a.task,
+}));
 
 const HOW_IT_WORKS: ProcessStep[] = [
   { icon: "🎯", title: "Вы ставите цель", explain: "Например: больше заявок с сайта. Одно предложение, без технического задания." },
@@ -99,7 +110,7 @@ export function Landing() {
       <section className="l-section" aria-labelledby="l-office">
         <h2 id="l-office">Живой офис вашей команды</h2>
         <p className="muted">Смотрите, как задача проходит от CEO до сайта: так выглядит ваш офис после регистрации.</p>
-        <OfficeScene onPick={() => {}} />
+        <OfficeScene people={DEMO_PEOPLE} beats={STORY} goal="Цель: больше переходов" onPick={() => {}} label="Пример офиса" />
       </section>
 
       <section className="l-section card" aria-labelledby="l-how">

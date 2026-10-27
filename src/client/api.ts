@@ -94,7 +94,9 @@ export async function getAgents(orgId: string): Promise<ApiResult<Agent[]>> {
 export type TeamStatus = "working" | "done" | "error" | "waiting" | "idle" | "planned";
 export interface TeamMember { id: string; name: string; role: string; status: TeamStatus; schedule: string; level: string; last_run: string; summary: string; link: string }
 export interface TeamReport { title: string; summary: string; link: string; updated: string }
-export interface TeamFeed { repo: string; project: string; updated_ms: number; agents: TeamMember[]; reports: TeamReport[] }
+export type TaskStatus = "new" | "running" | "done" | "failed";
+export interface TeamTask { title: string; status: TaskStatus; link: string; updated: string }
+export interface TeamFeed { repo: string; project: string; updated_ms: number; goal: string; agents: TeamMember[]; reports: TeamReport[]; tasks: TeamTask[] }
 export interface TeamView { feed: TeamFeed | null; available: { id: string; repo: string; project: string }[] }
 
 const strs = (v: Record<string, unknown>, keys: string[]) => keys.every((k) => typeof v[k] === "string");
@@ -106,7 +108,9 @@ function isTeamView(v: unknown): v is TeamView {
   return (
     isObj(f) && strs(f, ["repo", "project"]) && typeof f.updated_ms === "number" &&
     Array.isArray(f.agents) && f.agents.every((a) => isObj(a) && strs(a, ["id", "name", "role", "status", "schedule", "level", "last_run", "summary", "link"])) &&
-    Array.isArray(f.reports) && f.reports.every((r) => isObj(r) && strs(r, ["title", "summary", "link", "updated"]))
+    Array.isArray(f.reports) && f.reports.every((r) => isObj(r) && strs(r, ["title", "summary", "link", "updated"])) &&
+    typeof f.goal === "string" &&
+    Array.isArray(f.tasks) && f.tasks.every((t) => isObj(t) && strs(t, ["title", "status", "link", "updated"]))
   );
 }
 
@@ -142,3 +146,22 @@ export const ERROR_TEXT: Record<string, string> = {
 };
 
 export const errorText = (code: string) => ERROR_TEXT[code] ?? "Что-то пошло не так. Попробуйте ещё раз.";
+
+export interface ChatMessage { id: string; author: "owner" | "ceo"; body: string }
+const isChatMessage = (m: unknown): m is ChatMessage =>
+  isObj(m) && typeof m.id === "string" && (m.author === "owner" || m.author === "ceo") && typeof m.body === "string";
+
+export async function getMessages(orgId: string): Promise<ApiResult<ChatMessage[]>> {
+  const r = await call("GET", `/api/orgs/${encodeURIComponent(orgId)}/messages`);
+  if (!r.ok) return r;
+  return Array.isArray(r.data) && r.data.every(isChatMessage) ? { ok: true, data: r.data } : { ok: false, status: 500, error: "server" };
+}
+
+/** Sends the owner's message; `reply` is the CEO's answer, or null with `error` when the CEO could not answer. */
+export async function sendMessage(orgId: string, body: string): Promise<ApiResult<{ id: string; reply: ChatMessage | null; error?: string }>> {
+  const r = await call("POST", `/api/orgs/${encodeURIComponent(orgId)}/messages`, { body });
+  if (!r.ok) return r;
+  const d = r.data;
+  if (!isObj(d) || typeof d.id !== "string" || (d.reply !== null && !isChatMessage(d.reply))) return { ok: false, status: 500, error: "server" };
+  return { ok: true, data: { id: d.id, reply: d.reply as ChatMessage | null, error: typeof d.error === "string" ? d.error : undefined } };
+}

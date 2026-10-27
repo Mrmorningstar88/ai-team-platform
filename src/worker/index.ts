@@ -1,14 +1,17 @@
 import { Hono, type Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { leadMail, resendSender, resetMail, type SendMail } from "./email";
+import { ceoSystem, claudeCeo, type AskCeo, type ChatTurn } from "./ceo";
 import { verifyGithubToken, type Jwks } from "./github-oidc";
 import { hashPassword, randomSecret, sha256, verifyPassword } from "./password";
 import {
   addLead,
+  addMessage,
   addOwnerMessage,
   clearLoginFailures,
   countRecentLeads,
   countRecentLoginFailures,
+  countRecentOwnerMessages,
   countRecentResets,
   createAccount,
   createOrg,
@@ -50,6 +53,10 @@ export interface Env {
   MAIL_FROM?: string;
   /** Tests inject a fake sender here. */
   sendMail?: SendMail;
+  /** Claude API key for the CEO chat; without it the chat stores messages but the CEO can't answer. */
+  ANTHROPIC_API_KEY?: string;
+  /** Tests inject a fake CEO here. */
+  askCeo?: AskCeo;
   /** Tests inject GitHub's signing keys here. */
   githubJwks?: Jwks;
 }
@@ -58,6 +65,8 @@ type Vars = { userId: string; orgId: string };
 type Ctx = Context<{ Bindings: Env; Variables: Vars }>;
 
 const MAX_MESSAGE_CHARS = 4000;
+const MAX_OWNER_MESSAGES_PER_HOUR = 40;
+const CEO_HISTORY = 30;
 const SESSION_DAYS = 30;
 const MAX_FAILURES = 10;
 const FAILURE_WINDOW_MS = 15 * 60_000;
@@ -355,22 +364,29 @@ app.patch("/api/orgs/:orgId", async (c) => {
 
 app.get("/api/orgs/:orgId/agents", async (c) => c.json(await listAgents(c.env.DB, c.get("orgId"))));
 
+/** The org's team feed; a feed of the owner's whose project matches the org's name is attached on first use. */
+async function orgFeed(db: D1Database, orgId: string, user: { id: string; email: string }) {
+  const feed = await getOrgFeed(db, orgId);
+  if (feed) return feed;
+  const org = (await listUserOrgs(db, user.id)).find((o) => o.id === orgId);
+  const match = org && (await listOwnerFeeds(db, user.email)).find((f) => projectKey(f.project) === projectKey(org.name));
+  return match && (await linkOrgFeed(db, orgId, match.id, user.email, Date.now())) ? getOrgFeed(db, orgId) : null;
+}
+
 // The org's live team. A feed whose project matches the org's name is attached on
 // first look, so the owner has nothing to set up; others are offered to attach.
 app.get("/api/orgs/:orgId/team", async (c) => {
   const orgId = c.get("orgId");
   const user = await findUserById(c.env.DB, c.get("userId"));
   if (!user) return c.json({ error: "unauthorized" }, 401);
-  let feed = await getOrgFeed(c.env.DB, orgId);
-  const own = feed ? [] : await listOwnerFeeds(c.env.DB, user.email);
+  const feed = await orgFeed(c.env.DB, orgId, user);
   if (!feed) {
-    const org = (await listUserOrgs(c.env.DB, user.id)).find((o) => o.id === orgId);
-    const match = org && own.find((f) => projectKey(f.project) === projectKey(org.name));
-    if (match && (await linkOrgFeed(c.env.DB, orgId, match.id, user.email, Date.now()))) feed = await getOrgFeed(c.env.DB, orgId);
+    const own = await listOwnerFeeds(c.env.DB, user.email);
+    return c.json({ feed: null, available: own.map(({ id, repo, project }) => ({ id, repo, project })) });
   }
-  if (!feed) return c.json({ feed: null, available: own.map(({ id, repo, project }) => ({ id, repo, project })) });
-  const { agents, reports } = JSON.parse(feed.payload) as { agents: unknown[]; reports: unknown[] };
-  return c.json({ feed: { repo: feed.repo, project: feed.project, updated_ms: feed.updated_ms, agents, reports }, available: [] });
+  // Feeds saved before goals and tasks existed have neither.
+  const { goal = "", agents, reports, tasks = [] } = JSON.parse(feed.payload) as { goal?: string; agents: unknown[]; reports: unknown[]; tasks?: unknown[] };
+  return c.json({ feed: { repo: feed.repo, project: feed.project, updated_ms: feed.updated_ms, goal, agents, reports, tasks }, available: [] });
 });
 
 app.post("/api/orgs/:orgId/team", async (c) => {
@@ -402,14 +418,45 @@ app.post("/api/orgs/:orgId/approvals/:approvalId/decision", async (c) => {
 
 app.get("/api/orgs/:orgId/messages", async (c) => c.json(await listMessages(c.env.DB, c.get("orgId"))));
 
+/** The model needs turns that alternate and start with the owner; failed replies can leave two owner turns in a row. */
+function chatTurns(rows: { author: "owner" | "ceo"; body: string }[]): ChatTurn[] {
+  const turns: ChatTurn[] = [];
+  for (const r of rows) {
+    const last = turns[turns.length - 1];
+    if (!last && r.author === "ceo") continue;
+    if (last?.author === r.author) last.body += `\n\n${r.body}`;
+    else turns.push({ author: r.author, body: r.body });
+  }
+  return turns;
+}
+
+// The owner writes to the CEO; the CEO answers from the team's live data. Both are kept as the chat history.
 app.post("/api/orgs/:orgId/messages", async (c) => {
   const body = await jsonBody(c);
   const text = body?.body;
   if (typeof text !== "string" || !text.trim() || text.length > MAX_MESSAGE_CHARS) {
     return c.json({ error: "invalid_body" }, 400);
   }
-  const id = await addOwnerMessage(c.env.DB, c.get("orgId"), text.trim());
-  return c.json({ id }, 201);
+  const db = c.env.DB;
+  const orgId = c.get("orgId");
+  if ((await countRecentOwnerMessages(db, orgId, 60)) >= MAX_OWNER_MESSAGES_PER_HOUR) return c.json({ error: "try_later" }, 429);
+  const id = await addOwnerMessage(db, orgId, text.trim());
+
+  const ask = c.env.askCeo ?? (c.env.ANTHROPIC_API_KEY ? claudeCeo(c.env.ANTHROPIC_API_KEY) : null);
+  if (!ask) return c.json({ id, reply: null, error: "ceo_not_configured" }, 201);
+
+  const user = await findUserById(db, c.get("userId"));
+  const org = (await listUserOrgs(db, c.get("userId"))).find((o) => o.id === orgId);
+  const feed = user ? await orgFeed(db, orgId, user) : null;
+  const team = feed ? (JSON.parse(feed.payload) as { goal?: string }) : null;
+  const system = ceoSystem({ project: org?.name ?? "", goal: org?.goal || team?.goal || "", team });
+  const answer = await ask(system, chatTurns(await listMessages(db, orgId, CEO_HISTORY))).catch((e: unknown) => {
+    console.error("ceo", e);
+    return null;
+  });
+  if (!answer) return c.json({ id, reply: null, error: "ceo_failed" }, 201);
+  const replyId = await addMessage(db, orgId, "ceo", answer);
+  return c.json({ id, reply: { id: replyId, author: "ceo", body: answer } }, 201);
 });
 
 export default app;

@@ -1,12 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { roleById, type ProcessStep } from "../../shared/roles";
-import { getAgents, getTeam, linkTeam, renameOrg, errorText, type Agent, type Org, type TeamMember, type TeamView } from "../api";
-import { OfficeScene } from "../components/OfficeScene";
+import {
+  getAgents, getTeam, linkTeam, renameOrg, errorText,
+  type Agent, type Org, type TaskStatus, type TeamFeed, type TeamMember, type TeamView,
+} from "../api";
+import { OfficeScene, type SceneBeat, type ScenePerson } from "../components/OfficeScene";
 import { ProcessFlow } from "../components/ProcessFlow";
 import { Sheet } from "../components/Sheet";
-
-const STATUS_TEXT: Record<string, string> = { working: "Работает", waiting: "Ждёт", idle: "Свободен", paused: "На паузе" };
-const FIRST_TASK = "Ждёт первую задачу от CEO";
 
 const TEAM_STATUS: Record<TeamMember["status"], { text: string; dot: string }> = {
   working: { text: "Работает", dot: "working" },
@@ -21,15 +21,25 @@ const TEAM_STATUS: Record<TeamMember["status"], { text: string; dot: string }> =
 const ICONS: [RegExp, string][] = [
   [/ceo/, "🧭"], [/tech/, "🛠️"], [/qa|test/, "🧪"], [/seo/, "📈"], [/smm|social/, "📣"], [/news/, "📰"],
   [/market|data/, "📡"], [/dev|task/, "💻"], [/mail/, "✉️"], [/push/, "🔔"], [/analyst|report/, "📊"],
-  [/ads/, "🎯"], [/promo/, "🎟️"], [/site|build|deploy/, "🚀"],
+  [/ads/, "🎯"], [/promo/, "🎟️"], [/site|build|deploy/, "🚀"], [/content/, "✍️"],
 ];
 const iconFor = (id: string) => ICONS.find(([re]) => re.test(id))?.[1] ?? "🤖";
+
+const COLORS = ["#7a5bc0", "#2f6fc4", "#1f8a9c", "#c07a1f", "#c0466a", "#2c8a5c", "#8a5a2c", "#5b6bc0"];
+const colorFor = (id: string) => COLORS[[...id].reduce((n, ch) => n + ch.charCodeAt(0), 0) % COLORS.length]!;
+
+const TASK_COLUMNS: { status: TaskStatus; icon: string; title: string }[] = [
+  { status: "new", icon: "📥", title: "Ждут" },
+  { status: "running", icon: "⚙️", title: "В работе" },
+  { status: "done", icon: "✅", title: "Готово" },
+  { status: "failed", icon: "⚠️", title: "Не вышло" },
+];
 
 const FEED_STEPS: ProcessStep[] = [
   { icon: "🤖", title: "Боты работают", explain: "Ваши сотрудники работают в GitHub: публикуют посты, проверяют PR, обходят сайт, пишут отчёты." },
   { icon: "📮", title: "Связной собирает", explain: "Раз в час бот-связной собирает, кто что сделал, и отправляет сюда." },
-  { icon: "🔏", title: "Проверка подписи", explain: "Tamania принимает данные, только если GitHub подтвердил, что они пришли из вашего репозитория. Паролей и ключей нет." },
-  { icon: "🏢", title: "Офис обновлён", explain: "Вы видите каждого сотрудника, его последнюю работу и отчёты." },
+  { icon: "🔏", title: "Проверка подписи", explain: "Tamania принимает данные, только если GitHub подтвердил, что они пришли из вашего репозитория." },
+  { icon: "🏢", title: "Офис обновлён", explain: "Вы видите каждого сотрудника, его последнюю работу, задачи и отчёты." },
 ];
 
 function ago(iso: string, now = Date.now()): string {
@@ -42,19 +52,72 @@ function ago(iso: string, now = Date.now()): string {
   return new Date(t).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
 }
 
-/** What the detail sheet shows: a real team member, or one from the example scene. */
-interface Picked { name: string; role: string; task: string; step: number }
+const runTime = (a: TeamMember) => Date.parse(a.last_run) || 0;
+const plain = (summary: string) => summary.replace(/^Отработал без ошибок:?\s*/, "").replace(/\.$/, "");
+
+/** Real people at real desks, in the order the team lists them. */
+function feedPeople(feed: TeamFeed): ScenePerson[] {
+  return feed.agents.map((a) => ({
+    id: a.id,
+    name: a.name,
+    icon: iconFor(a.id),
+    color: colorFor(a.id),
+    mode: a.status,
+    label: a.summary || a.role,
+  }));
+}
+
+/** The office's story, made only of what the team actually did: latest runs first, then open tasks. */
+function feedBeats(feed: TeamFeed): SceneBeat[] {
+  const ids = new Set(feed.agents.map((a) => a.id));
+  const boss = ids.has("ceo") ? "ceo" : "owner";
+  const runs: SceneBeat[] = feed.agents
+    .filter((a) => a.last_run && a.id !== boss)
+    .sort((a, b) => runTime(b) - runTime(a))
+    .slice(0, 8)
+    .map((a) => {
+      const explain = `${a.name}, ${ago(a.last_run)}: ${a.summary || a.role}`;
+      if (a.status === "error") return { from: a.id, to: boss, item: "Ошибка", says: "Нужна помощь", explain };
+      if (a.status === "working") return { from: a.id, to: boss, item: "В работе", says: "Работаю прямо сейчас", explain };
+      return { from: a.id, to: "site", item: "Готово", says: plain(a.summary) || "Готово", explain };
+    });
+  const dev = feed.agents.find((a) => /dev/.test(a.id))?.id;
+  const tasks: SceneBeat[] = dev
+    ? feed.tasks
+        .filter((t) => t.status === "new" || t.status === "running")
+        .slice(0, 3)
+        .map((t) => ({
+          from: "owner",
+          to: dev,
+          item: "Задача",
+          says: t.title,
+          explain: `Задача «${t.title}» ${t.status === "running" ? "уже в работе у разработчика" : "ждёт разработчика в очереди"}.`,
+        }))
+    : [];
+  return [...tasks, ...runs];
+}
+
+/** The starter team before any bots report: everyone sits ready, nobody pretends to work. */
+function starterPeople(agents: Agent[]): ScenePerson[] {
+  return agents.map((a) => ({
+    id: a.id,
+    name: a.name,
+    icon: roleById(a.role)?.icon ?? "🤖",
+    color: colorFor(a.role),
+    mode: "idle",
+    label: "Ждёт первую задачу",
+  }));
+}
 
 export function Office({ org, onRenamed }: { org: Org; onRenamed: (org: Org) => void }) {
   const [team, setTeam] = useState<TeamView | null>(null);
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [open, setOpen] = useState<Picked | null>(null);
   const [member, setMember] = useState<TeamMember | null>(null);
+  const [starter, setStarter] = useState<Agent | null>(null);
   const [linkError, setLinkError] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [renameError, setRenameError] = useState("");
-  const role = open ? roleById(open.role) : undefined;
 
   useEffect(() => {
     let live = true;
@@ -86,10 +149,15 @@ export function Office({ org, onRenamed }: { org: Org; onRenamed: (org: Org) => 
   }
 
   const feed = team?.feed;
-  const busy = feed
-    ? feed.agents.filter((a) => a.status === "working").length
-    : agents?.filter((a) => a.status === "working").length ?? 0;
+  const goal = org.goal || feed?.goal || "";
   const loading = !failed && (team === null || agents === null);
+  const busy = feed?.agents.filter((a) => a.status === "working").length ?? 0;
+  const broken = feed?.agents.filter((a) => a.status === "error").length ?? 0;
+
+  function pick(id: string) {
+    if (feed) setMember(feed.agents.find((a) => a.id === id) ?? null);
+    else setStarter(agents?.find((a) => a.id === id) ?? null);
+  }
 
   return (
     <>
@@ -100,23 +168,19 @@ export function Office({ org, onRenamed }: { org: Org; onRenamed: (org: Org) => 
             <button type="button" className="btn btn-plain" onClick={() => { setRenameError(""); setRenaming(true); }}>Переименовать</button>
           )}
         </div>
-        <p className="muted">
-          {org.goal ? `Цель: ${org.goal}.` : feed ? "" : "Цель пока не задана."}
-          {feed && ` В команде ${feed.agents.length}, сейчас работают ${busy}. Обновлено ${ago(new Date(feed.updated_ms).toISOString())}.`}
-          {!feed && agents && ` В команде ${agents.length}, сейчас работают ${busy}.`}
-        </p>
+        {goal && <p className="muted">Цель: {goal}</p>}
       </header>
 
       {failed && <p className="auth-error" role="alert">Не удалось загрузить команду. Обновите страницу.</p>}
       {loading && <span className="typing" aria-label="Загрузка"><i /><i /><i /></span>}
 
       {team && !feed && team.available.length > 0 && (
-        <section className="card stack" style={{ marginBottom: 24 }} aria-labelledby="feed-offer">
+        <section className="card stack section-gap" aria-labelledby="feed-offer">
           <h2 id="feed-offer">Найдена ваша команда в GitHub</h2>
           <p className="muted">Подключите её, и в этом офисе будут видны настоящие сотрудники и их работа.</p>
           {team.available.map((f) => (
             <button key={f.id} type="button" className="btn btn-primary" onClick={() => void attach(f.id)}>
-              Подключить {f.project} ({f.repo})
+              Подключить {f.project}
             </button>
           ))}
           {linkError && <p className="auth-error" role="alert">{linkError}</p>}
@@ -125,8 +189,41 @@ export function Office({ org, onRenamed }: { org: Org; onRenamed: (org: Org) => 
 
       {feed && (
         <>
-          <h2 style={{ marginBottom: 12 }}>Команда проекта</h2>
-          <div className="grid" style={{ marginBottom: 32 }}>
+          <div className="office-stats" role="list" aria-label="Команда сейчас">
+            <div role="listitem" className="stat"><span aria-hidden>👥</span><strong>{feed.agents.length}</strong> в команде</div>
+            <div role="listitem" className="stat"><span aria-hidden>⌨️</span><strong>{busy}</strong> работают</div>
+            <div role="listitem" className={`stat ${broken ? "stat-bad" : ""}`}><span aria-hidden>⚠️</span><strong>{broken}</strong> с ошибкой</div>
+            <div role="listitem" className="stat"><span aria-hidden>🔄</span>{ago(new Date(feed.updated_ms).toISOString())}</div>
+          </div>
+          <p className="muted section-note">Это ваш офис. Внизу по шагам показано, что команда сделала последним. Нажмите на сотрудника, чтобы увидеть подробности.</p>
+          <OfficeScene people={feedPeople(feed)} beats={feedBeats(feed)} goal={goal} onPick={pick} label={`Офис ${org.name}`} />
+
+          <h2 className="section-title">Бэклог задач</h2>
+          {feed.tasks.length === 0 ? (
+            <p className="muted section-gap">Задач в очереди нет. Новые задачи появятся здесь, как только вы или CEO их поставите.</p>
+          ) : (
+            <div className="board section-gap">
+              {TASK_COLUMNS.map((col) => {
+                const items = feed.tasks.filter((t) => t.status === col.status);
+                return (
+                  <section key={col.status} className={`board-col col-${col.status}`} aria-label={col.title}>
+                    <h3><span aria-hidden>{col.icon}</span> {col.title} <span className="board-count">{items.length}</span></h3>
+                    {items.length === 0 && <p className="muted small">Пусто</p>}
+                    {items.map((t, i) => (
+                      <article key={`${t.title}-${i}`} className="board-card" style={{ animationDelay: `${i * 60}ms` }}>
+                        <p>{t.title}</p>
+                        <p className="muted small">{ago(t.updated)}</p>
+                        {t.link && <a href={t.link} target="_blank" rel="noreferrer" className="small">Открыть PR</a>}
+                      </article>
+                    ))}
+                  </section>
+                );
+              })}
+            </div>
+          )}
+
+          <h2 className="section-title">Кто чем занят</h2>
+          <div className="grid section-gap">
             {feed.agents.map((a) => {
               const s = TEAM_STATUS[a.status] ?? TEAM_STATUS.idle;
               return (
@@ -144,23 +241,8 @@ export function Office({ org, onRenamed }: { org: Org; onRenamed: (org: Org) => 
             })}
           </div>
 
-          {feed.reports.length > 0 && (
-            <>
-              <h2 style={{ marginBottom: 12 }}>Отчёты команды</h2>
-              <div className="stack" style={{ marginBottom: 32 }}>
-                {feed.reports.map((r) => (
-                  <article key={r.link || r.title} className="card stack">
-                    <h3>{r.title}</h3>
-                    <p className="small" style={{ whiteSpace: "pre-line" }}>{r.summary}</p>
-                    {r.link && <a className="btn btn-plain" href={r.link} target="_blank" rel="noreferrer">Открыть отчёт</a>}
-                  </article>
-                ))}
-              </div>
-            </>
-          )}
-
-          <section className="card" style={{ marginBottom: 32 }} aria-labelledby="feed-how">
-            <h2 id="feed-how">Как работа команды попадает в офис</h2>
+          <section className="card stack section-gap" aria-labelledby="feed-how">
+            <h2 id="feed-how">Как работа команды попадает сюда</h2>
             <ProcessFlow steps={FEED_STEPS} label="Как данные попадают в офис" />
           </section>
         </>
@@ -168,45 +250,16 @@ export function Office({ org, onRenamed }: { org: Org; onRenamed: (org: Org) => 
 
       {team && !feed && agents && (
         <>
-          <h2 style={{ marginBottom: 12 }}>Команда проекта</h2>
-          <div className="grid" style={{ marginBottom: 32 }}>
-            {agents.map((a) => {
-              const r = roleById(a.role);
-              const status = STATUS_TEXT[a.status] ? a.status : "idle";
-              return (
-                <button
-                  key={a.id}
-                  type="button"
-                  className="card desk"
-                  onClick={() => setOpen({ name: a.name, role: a.role, task: FIRST_TASK, step: 0 })}
-                >
-                  <div className="row">
-                    <div className={`avatar ${status}`} aria-hidden>{r?.icon ?? "🤖"}</div>
-                    <div>
-                      <h3>{a.name}</h3>
-                      <span className="pill"><span className={`dot dot-${status}`} />{STATUS_TEXT[status]}</span>
-                    </div>
-                  </div>
-                  <p className="small">{FIRST_TASK}</p>
-                  <p className="muted small">Самостоятельность: {a.autonomy}</p>
-                </button>
-              );
-            })}
-          </div>
+          <p className="muted section-note">Команда на местах и ждёт первую задачу. Напишите CEO в чат, что нужно сделать.</p>
+          <OfficeScene people={starterPeople(agents)} beats={[]} goal={goal} onPick={pick} label={`Офис ${org.name}`} />
         </>
       )}
 
-      <h2 style={{ marginBottom: 6 }}>Как работает команда</h2>
-      <p className="muted" style={{ marginBottom: 12 }}>
-        Пример: как задача проходит через команду от CEO до сайта. Нажмите на сотрудника, чтобы увидеть его работу по шагам.
-      </p>
-      <OfficeScene onPick={(a) => setOpen(a)} />
-
-      {open && role && (
-        <Sheet title={`${open.name}: как идёт работа`} onClose={() => setOpen(null)}>
-          <p className="muted">{role.pitch}</p>
-          <p><strong>Сейчас:</strong> {open.task}</p>
-          <ProcessFlow steps={role.steps} startAt={open.step} label={`Процесс: ${open.name}`} />
+      {starter && (
+        <Sheet title={starter.name} onClose={() => setStarter(null)}>
+          <p className="muted">{roleById(starter.role)?.pitch}</p>
+          <p><strong>Сейчас:</strong> ждёт первую задачу от CEO.</p>
+          {roleById(starter.role) && <ProcessFlow steps={roleById(starter.role)!.steps} label={`Как работает: ${starter.name}`} />}
         </Sheet>
       )}
 

@@ -1,4 +1,4 @@
-// Demo organization shown until sign-in and the API are wired to the screens.
+// Example office for the landing page. Inside a project only the owner's real data is shown.
 
 export type AgentStatus = "working" | "waiting" | "idle";
 
@@ -58,42 +58,14 @@ export const APPROVAL_PIPELINE = [
   { icon: "🌐", title: "Сайт", explain: "После вашего «да» правка сама публикуется, а CEO следит за результатом." },
 ];
 
-export interface DemoKpi {
-  label: string;
-  value: number;
-  suffix?: string;
-  delta: number;
-  why: string;
-  series: number[];
-}
-
-export const DEMO_KPIS: DemoKpi[] = [
-  { label: "Переходы по партнёрским ссылкам", value: 1284, delta: 18, why: "Рост дали обновлённые страницы рынков: на них стало больше кликов из Google.", series: [62, 70, 66, 81, 90, 88, 104] },
-  { label: "Страниц в индексе Google", value: 412, delta: 6, why: "SEO отправил карту сайта, Google добавил 24 новые страницы.", series: [380, 384, 389, 395, 399, 406, 412] },
-  { label: "Расход на ИИ за месяц", value: 7.4, suffix: " $", delta: -12, why: "Техлид перевёл рутинные проверки на более дешёвую модель.", series: [1.4, 1.2, 1.1, 1, 0.9, 0.9, 0.9] },
-];
-
-export interface DemoMessage {
-  author: "owner" | "ceo";
-  body: string;
-}
-
-export const DEMO_MESSAGES: DemoMessage[] = [
-  { author: "ceo", body: "Доброе утро. За вчера переходов по партнёрским ссылкам стало на 18% больше. Две правки ждут вашего одобрения, ссылка во вкладке «Одобрения»." },
-  { author: "owner", body: "Что сейчас самое важное?" },
-  { author: "ceo", body: "Страницы рынков: они приносят 70% переходов. SEO уже подготовил новые заголовки, техлид их проверяет." },
-];
-
-/** Where each member of the demo office sits, in floor tiles. "owner" and "site" are fixed spots. */
-export const DESKS: Record<string, { x: number; y: number }> = {
-  a1: { x: 1.5, y: 1.5 },
-  a2: { x: 6, y: 1.5 },
-  a3: { x: 10.5, y: 1.5 },
-  a4: { x: 1.5, y: 6 },
-  a5: { x: 6, y: 6 },
-  a6: { x: 10.5, y: 6 },
-  owner: { x: 12.4, y: 10.6 },
-  site: { x: 14.2, y: 4.2 },
+/** Shirt colours for people in the office scene, by role. */
+export const SHIRT: Record<string, string> = {
+  ceo: "#7a5bc0",
+  techlead: "#2f6fc4",
+  qa: "#1f8a9c",
+  seo: "#c07a1f",
+  content: "#c0466a",
+  analyst: "#2c8a5c",
 };
 
 export interface StoryBeat {

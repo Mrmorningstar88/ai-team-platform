@@ -401,6 +401,55 @@ describe("team feeds", () => {
     expect(me.orgs.map((o) => o.name)).toEqual(["freekonomist"]);
   });
 
+  it("keeps the backlog and goal a team reports, and rejects bad tasks", async () => {
+    const t = await token();
+    const tasks = [{ title: "Обновить заголовки", status: "running", link: "https://github.com/owner/site/pull/7", updated: "2026-10-27" }];
+    expect((await ingest(feed("ainc", { tasks: [{ title: "x", status: "lost" }] }), t)).status).toBe(400);
+    expect((await ingest(feed("ainc", { goal: "1 млн пользователей", tasks }), t)).status).toBe(200);
+    const data = (await (await app.request("/api/orgs/org-a/team", { headers: await as("u-a") }, feedEnv)).json()) as { feed: { goal: string; tasks: unknown[] } };
+    expect(data.feed.goal).toBe("1 млн пользователей");
+    expect(data.feed.tasks).toEqual(tasks);
+  });
+
+  it("lets the CEO answer from the team's data and keeps the chat history per project", async () => {
+    await ingest(feed("ainc", { goal: "1 млн пользователей" }), await token());
+    const seen: { system: string; history: { author: string; body: string }[] }[] = [];
+    const ceoEnv: Env = {
+      ...feedEnv,
+      askCeo: async (system, history) => {
+        seen.push({ system, history });
+        return "План: SMM продолжает посты.";
+      },
+    };
+    const post = async (orgId: string, userId: string, body: string, e = ceoEnv) =>
+      app.request(
+        `/api/orgs/${orgId}/messages`,
+        { method: "POST", headers: { ...(await as(userId)), "Content-Type": "application/json" }, body: JSON.stringify({ body }) },
+        e,
+      );
+
+    const res = await post("org-a", "u-a", "Какой план?");
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { reply: { body: string } }).reply.body).toBe("План: SMM продолжает посты.");
+    // The CEO sees the goal and the team's live status, and the owner's question as the last turn.
+    expect(seen[0]!.system).toContain("1 млн пользователей");
+    expect(seen[0]!.system).toContain("Посты вышли");
+    expect(seen[0]!.history).toEqual([{ author: "owner", body: "Какой план?" }]);
+
+    await post("org-a", "u-a", "А затыки?");
+    expect(seen[1]!.history.map((h) => h.author)).toEqual(["owner", "ceo", "owner"]);
+    const history = (await (await app.request("/api/orgs/org-a/messages", { headers: await as("u-a") }, ceoEnv)).json()) as { author: string; body: string }[];
+    expect(history.map((m) => m.body)).toEqual(["Какой план?", "План: SMM продолжает посты.", "А затыки?", "План: SMM продолжает посты."]);
+
+    // Another project has its own history, and another owner can't reach this one.
+    expect(await (await app.request("/api/orgs/org-b/messages", { headers: await as("u-b") }, ceoEnv)).json()).toEqual([]);
+    expect((await post("org-a", "u-b", "Привет")).status).toBe(404);
+
+    // Without a key the message is still saved and the owner is told why there is no answer.
+    const noKey = await post("org-a", "u-a", "Ты тут?", feedEnv);
+    expect(((await noKey.json()) as { error: string }).error).toBe("ceo_not_configured");
+  });
+
   it("offers a feed with another name and attaches it on request", async () => {
     await ingest(feed("brainax"), await token());
     const before = (await (await app.request("/api/orgs/org-a/team", { headers: await as("u-a") }, feedEnv)).json()) as { feed: unknown; available: { id: string }[] };
