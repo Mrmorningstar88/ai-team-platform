@@ -1,6 +1,7 @@
 import { Hono, type Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { leadMail, resendSender, resetMail, type SendMail } from "./email";
+import { verifyGithubToken, type Jwks } from "./github-oidc";
 import { hashPassword, randomSecret, sha256, verifyPassword } from "./password";
 import {
   addLead,
@@ -16,14 +17,19 @@ import {
   findUserByEmail,
   findUserById,
   getOrCreateSetting,
+  getOrgFeed,
   isMember,
+  linkOrgFeed,
   listAgents,
   listMessages,
+  listOwnerFeeds,
   listPendingApprovals,
   listUserOrgs,
   recordLoginFailure,
+  saveTeamFeed,
   useReset,
 } from "./repo";
+import { parseTeamFeed, projectKey } from "./team";
 import { ensureSchema } from "./schema";
 import { signSession, verifySession } from "./session";
 
@@ -41,6 +47,8 @@ export interface Env {
   MAIL_FROM?: string;
   /** Tests inject a fake sender here. */
   sendMail?: SendMail;
+  /** Tests inject GitHub's signing keys here. */
+  githubJwks?: Jwks;
 }
 
 type Vars = { userId: string; orgId: string };
@@ -56,6 +64,9 @@ const MAX_LEADS_PER_HOUR = 60;
 const RESET_TTL_MS = 60 * 60_000;
 const MAX_RESETS_PER_HOUR = 3;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** The audience a GitHub Actions job requests its token for when it reports to us. */
+const GITHUB_AUDIENCE = "tamania";
+const MAX_FEED_BYTES = 100_000;
 /** Built-in settings, so the owner has nothing to configure; Cloudflare variables override them. */
 const DEFAULT_SIGNUP_CODES = "TAMANIA";
 const DEFAULT_LEADS_EMAIL = "arutyun@nazaryan.org";
@@ -235,6 +246,29 @@ app.get("/api/me", async (c) => {
   return data ? c.json(data) : c.json({ error: "unauthorized" }, 401);
 });
 
+// ---- Team feeds ----
+
+// A GitHub Actions job in the owner's repository reports its team's status here.
+// It proves where it runs with GitHub's OIDC token, so no shared secret is needed;
+// only the default branch may report, so a pull request can't overwrite the office.
+app.post("/api/ingest/team", async (c) => {
+  const token = /^Bearer (.+)$/.exec(c.req.header("Authorization") ?? "")?.[1];
+  const claims = token ? await verifyGithubToken(token, GITHUB_AUDIENCE, Date.now(), c.env.githubJwks) : null;
+  if (!claims || claims.ref !== "refs/heads/main") return c.json({ error: "unauthorized" }, 401);
+  const raw = await c.req.text();
+  if (raw.length > MAX_FEED_BYTES) return c.json({ error: "too_long" }, 413);
+  let body: unknown = null;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    // Falls through to the validation error below.
+  }
+  const feed = parseTeamFeed(body);
+  if (!feed) return c.json({ error: "invalid_body" }, 400);
+  const id = await saveTeamFeed(c.env.DB, claims.repository, feed, Date.now());
+  return c.json({ ok: true, id });
+});
+
 // ---- Organization data ----
 
 // A signed-in user adds another project; it starts with the same team as at sign-up.
@@ -264,6 +298,34 @@ app.use("/api/orgs/:orgId/*", async (c, next) => {
 });
 
 app.get("/api/orgs/:orgId/agents", async (c) => c.json(await listAgents(c.env.DB, c.get("orgId"))));
+
+// The org's live team. A feed whose project matches the org's name is attached on
+// first look, so the owner has nothing to set up; others are offered to attach.
+app.get("/api/orgs/:orgId/team", async (c) => {
+  const orgId = c.get("orgId");
+  const user = await findUserById(c.env.DB, c.get("userId"));
+  if (!user) return c.json({ error: "unauthorized" }, 401);
+  let feed = await getOrgFeed(c.env.DB, orgId);
+  const own = feed ? [] : await listOwnerFeeds(c.env.DB, user.email);
+  if (!feed) {
+    const org = (await listUserOrgs(c.env.DB, user.id)).find((o) => o.id === orgId);
+    const match = org && own.find((f) => projectKey(f.project) === projectKey(org.name));
+    if (match && (await linkOrgFeed(c.env.DB, orgId, match.id, user.email, Date.now()))) feed = await getOrgFeed(c.env.DB, orgId);
+  }
+  if (!feed) return c.json({ feed: null, available: own.map(({ id, repo, project }) => ({ id, repo, project })) });
+  const { agents, reports } = JSON.parse(feed.payload) as { agents: unknown[]; reports: unknown[] };
+  return c.json({ feed: { repo: feed.repo, project: feed.project, updated_ms: feed.updated_ms, agents, reports }, available: [] });
+});
+
+app.post("/api/orgs/:orgId/team", async (c) => {
+  const body = await jsonBody(c);
+  const feedId = str(body?.feed_id);
+  if (!feedId || feedId.length > 200) return c.json({ error: "invalid_body" }, 400);
+  const user = await findUserById(c.env.DB, c.get("userId"));
+  if (!user) return c.json({ error: "unauthorized" }, 401);
+  const ok = await linkOrgFeed(c.env.DB, c.get("orgId"), feedId, user.email, Date.now());
+  return ok ? c.json({ ok: true }) : c.json({ error: "not_found" }, 404);
+});
 
 app.get("/api/orgs/:orgId/approvals", async (c) => c.json(await listPendingApprovals(c.env.DB, c.get("orgId"))));
 

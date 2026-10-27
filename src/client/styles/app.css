@@ -98,6 +98,7 @@ button { font: inherit; color: inherit; }
 .dot-working { background: var(--good-dot); }
 .dot-waiting { background: var(--warn-dot); }
 .dot-idle { background: var(--text-2); }
+.dot-error { background: var(--bad-dot); }
 
 /* ---------- Office ---------- */
 

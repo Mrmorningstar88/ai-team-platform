@@ -96,6 +96,20 @@ export const SCHEMA: string[] = [
     created_ms INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS leads_created ON leads(created_ms)`,
+  `CREATE TABLE IF NOT EXISTS team_feeds (
+    id TEXT PRIMARY KEY,
+    repo TEXT NOT NULL,
+    project TEXT NOT NULL,
+    owner_email TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    updated_ms INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS team_feeds_owner ON team_feeds(owner_email)`,
+  `CREATE TABLE IF NOT EXISTS org_feeds (
+    org_id TEXT PRIMARY KEY REFERENCES orgs(id) ON DELETE CASCADE,
+    feed_id TEXT NOT NULL REFERENCES team_feeds(id) ON DELETE CASCADE,
+    linked_ms INTEGER NOT NULL
+  )`,
 ];
 
 const ready = new WeakSet<D1Database>();
