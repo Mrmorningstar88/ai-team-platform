@@ -124,10 +124,11 @@ describe("accounts", () => {
     expect((await signup({ ...owner, email: "not-an-email" })).status).toBe(400);
     expect((await signup({ ...owner, password: "short" })).status).toBe(400);
     expect((await signup({ ...owner, orgName: "  " })).status).toBe(400);
-    // Early access: no code, a wrong code, or no codes configured at all.
+    // Early access: no code or a wrong code is refused; with no codes configured, the built-in one works.
     expect((await signup({ ...owner, promo: undefined })).status).toBe(403);
     expect((await signup({ ...owner, promo: "guess" })).status).toBe(403);
     expect((await signup(owner, { ...env, SIGNUP_CODES: undefined })).status).toBe(403);
+    expect((await signup({ ...owner, email: "builtin@example.com", promo: "tamania" }, { ...env, SIGNUP_CODES: undefined })).status).toBe(201);
     expect((await signup({ ...owner, email: "friend@example.com", promo: " Friends " })).status).toBe(201);
     expect((await app.request("/api/auth/signup", { method: "POST", body: JSON.stringify(owner) }, env)).status).toBe(400);
     expect((await signup(owner)).status).toBe(201);
