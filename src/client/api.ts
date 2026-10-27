@@ -96,10 +96,15 @@ export interface TeamMember { id: string; name: string; role: string; status: Te
 export interface TeamReport { title: string; summary: string; link: string; updated: string }
 export type TaskStatus = "new" | "running" | "done" | "failed";
 export interface TeamTask { title: string; status: TaskStatus; link: string; updated: string }
-export interface TeamFeed { repo: string; project: string; updated_ms: number; goal: string; agents: TeamMember[]; reports: TeamReport[]; tasks: TeamTask[] }
+export interface ProgressItem { label: string; value: number | null; target: number | null; unit: string; note: string }
+export interface TeamFeed {
+  repo: string; project: string; updated_ms: number; goal: string;
+  agents: TeamMember[]; reports: TeamReport[]; tasks: TeamTask[]; progress: ProgressItem[];
+}
 export interface TeamView { feed: TeamFeed | null; available: { id: string; repo: string; project: string }[] }
 
 const strs = (v: Record<string, unknown>, keys: string[]) => keys.every((k) => typeof v[k] === "string");
+const numOrNull = (v: unknown) => v === null || (typeof v === "number" && Number.isFinite(v));
 
 function isTeamView(v: unknown): v is TeamView {
   if (!isObj(v) || !Array.isArray(v.available) || !v.available.every((f) => isObj(f) && strs(f, ["id", "repo", "project"]))) return false;
@@ -110,7 +115,8 @@ function isTeamView(v: unknown): v is TeamView {
     Array.isArray(f.agents) && f.agents.every((a) => isObj(a) && strs(a, ["id", "name", "role", "status", "schedule", "level", "last_run", "summary", "link"])) &&
     Array.isArray(f.reports) && f.reports.every((r) => isObj(r) && strs(r, ["title", "summary", "link", "updated"])) &&
     typeof f.goal === "string" &&
-    Array.isArray(f.tasks) && f.tasks.every((t) => isObj(t) && strs(t, ["title", "status", "link", "updated"]))
+    Array.isArray(f.tasks) && f.tasks.every((t) => isObj(t) && strs(t, ["title", "status", "link", "updated"])) &&
+    Array.isArray(f.progress) && f.progress.every((p) => isObj(p) && strs(p, ["label", "unit", "note"]) && numOrNull(p.value) && numOrNull(p.target))
   );
 }
 

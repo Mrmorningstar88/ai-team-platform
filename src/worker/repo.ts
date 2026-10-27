@@ -242,12 +242,15 @@ export interface FeedRow { id: string; repo: string; project: string; payload: s
 /** Stores the latest status a repository reported for one project, replacing the previous one. */
 export async function saveTeamFeed(db: D1Database, repo: string, input: TeamFeedInput, nowMs: number): Promise<string> {
   const id = `${repo}#${input.project}`;
-  let tasks = input.tasks;
-  if (!tasks) {
-    const prev = await db.prepare("SELECT payload FROM team_feeds WHERE id = ?").bind(id).first<{ payload: string }>();
-    tasks = prev ? ((JSON.parse(prev.payload) as { tasks?: TeamFeedInput["tasks"] }).tasks ?? []) : [];
+  let { tasks, progress } = input;
+  // A part the team couldn't read this time keeps its last known value.
+  if (!tasks || !progress) {
+    const row = await db.prepare("SELECT payload FROM team_feeds WHERE id = ?").bind(id).first<{ payload: string }>();
+    const prev = row ? (JSON.parse(row.payload) as Pick<TeamFeedInput, "tasks" | "progress">) : {};
+    tasks ??= prev.tasks ?? [];
+    progress ??= prev.progress ?? [];
   }
-  const payload = JSON.stringify({ goal: input.goal, agents: input.agents, reports: input.reports, tasks });
+  const payload = JSON.stringify({ goal: input.goal, agents: input.agents, reports: input.reports, tasks, progress });
   await db
     .prepare(
       `INSERT INTO team_feeds (id, repo, project, owner_email, payload, updated_ms) VALUES (?, ?, ?, ?, ?, ?)

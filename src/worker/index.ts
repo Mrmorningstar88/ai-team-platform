@@ -384,9 +384,11 @@ app.get("/api/orgs/:orgId/team", async (c) => {
     const own = await listOwnerFeeds(c.env.DB, user.email);
     return c.json({ feed: null, available: own.map(({ id, repo, project }) => ({ id, repo, project })) });
   }
-  // Feeds saved before goals and tasks existed have neither.
-  const { goal = "", agents, reports, tasks = [] } = JSON.parse(feed.payload) as { goal?: string; agents: unknown[]; reports: unknown[]; tasks?: unknown[] };
-  return c.json({ feed: { repo: feed.repo, project: feed.project, updated_ms: feed.updated_ms, goal, agents, reports, tasks }, available: [] });
+  // Feeds saved before goals, tasks and progress existed have none of them.
+  const { goal = "", agents, reports, tasks = [], progress = [] } = JSON.parse(feed.payload) as {
+    goal?: string; agents: unknown[]; reports: unknown[]; tasks?: unknown[]; progress?: unknown[];
+  };
+  return c.json({ feed: { repo: feed.repo, project: feed.project, updated_ms: feed.updated_ms, goal, agents, reports, tasks, progress }, available: [] });
 });
 
 app.post("/api/orgs/:orgId/team", async (c) => {

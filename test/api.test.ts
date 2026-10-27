@@ -415,6 +415,23 @@ describe("team feeds", () => {
     expect(kept.feed.tasks).toEqual(tasks);
   });
 
+  it("keeps the team's progress towards the goal, and rejects made-up numbers", async () => {
+    const t = await token();
+    const progress = [
+      { label: "Пользователи", value: 1234, target: 1000000, unit: "", note: "подписчики сайта" },
+      { label: "Выручка", value: null, target: 100000000, unit: "$", note: "партнёрки не передают выплаты" },
+    ];
+    expect((await ingest(feed("ainc", { progress: [{ label: "x", value: -1, target: 10, unit: "", note: "" }] }), t)).status).toBe(400);
+    expect((await ingest(feed("ainc", { progress: [{ label: "x", value: 1, target: 0, unit: "", note: "" }] }), t)).status).toBe(400);
+    expect((await ingest(feed("ainc", { progress }), t)).status).toBe(200);
+    const read = async () =>
+      ((await (await app.request("/api/orgs/org-a/team", { headers: await as("u-a") }, feedEnv)).json()) as { feed: { progress: unknown[] } }).feed.progress;
+    expect(await read()).toEqual(progress);
+    // A report that couldn't count keeps the last known progress.
+    expect((await ingest(feed("ainc", {}), t)).status).toBe(200);
+    expect(await read()).toEqual(progress);
+  });
+
   it("lets the CEO answer from the team's data and keeps the chat history per project", async () => {
     await ingest(feed("ainc", { goal: "1 млн пользователей" }), await token());
     const seen: { system: string; history: { author: string; body: string }[] }[] = [];

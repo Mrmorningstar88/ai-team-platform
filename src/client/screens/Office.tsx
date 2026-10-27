@@ -4,6 +4,7 @@ import {
   getAgents, getTeam, linkTeam, renameOrg, errorText,
   type Agent, type Org, type TaskStatus, type TeamFeed, type TeamMember, type TeamView,
 } from "../api";
+import { GoalProgress } from "../components/GoalProgress";
 import { OfficeScene, type SceneBeat, type ScenePerson } from "../components/OfficeScene";
 import { ProcessFlow } from "../components/ProcessFlow";
 import { Sheet } from "../components/Sheet";
@@ -189,6 +190,7 @@ export function Office({ org, onRenamed }: { org: Org; onRenamed: (org: Org) => 
 
       {feed && (
         <>
+          {feed.progress.length > 0 && <GoalProgress items={feed.progress} />}
           <div className="office-stats" role="list" aria-label="Команда сейчас">
             <div role="listitem" className="stat"><span aria-hidden>👥</span><strong>{feed.agents.length}</strong> в команде</div>
             <div role="listitem" className="stat"><span aria-hidden>⌨️</span><strong>{busy}</strong> работают</div>
