@@ -25,3 +25,11 @@ npm run build
 ```
 
 Для локального API: `npm run db:migrate:local`, затем `npx wrangler dev` с `SESSION_SECRET` в `.dev.vars`.
+
+## Выкладка
+
+Cloudflare Pages, проект `ai-team-platform`, подключён к этому репозиторию: каждый мерж в `main` выкладывается на tamania.io.
+
+- Сборка: `npm run build`, папка `dist/client`; API отдают Pages Functions из `functions/api`.
+- База: D1 `ai-team-platform`, привязка `DB` в Settings → Bindings. Таблицы и ключ сессий создаются сами при первом запросе.
+- Если сборка падает на шаге clone repo («Repository not found»), у приложения Cloudflare в GitHub нет доступа к репозиторию: github.com/settings/installations → Cloudflare Workers and Pages → Repository access.
