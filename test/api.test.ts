@@ -128,6 +128,26 @@ describe("accounts", () => {
     expect((await signup({ ...owner, email: "OWNER@example.com" })).status).toBe(409);
   });
 
+  it("adds a project for its owner only, with its own starter team", async () => {
+    const res = await signup(owner);
+    const cookie = { Cookie: cookieOf(res), ...json };
+    const add = (body: Record<string, unknown>, headers: Record<string, string> = cookie) =>
+      app.request("/api/orgs", { method: "POST", headers, body: JSON.stringify(body) }, env);
+
+    expect((await add({ name: "Brainax" }, json)).status).toBe(401);
+    expect((await add({ name: " " })).status).toBe(400);
+    const created = await add({ name: "Brainax", goal: "Больше учеников" });
+    expect(created.status).toBe(201);
+    const { id } = (await created.json()) as { id: string };
+
+    const me = (await (await app.request("/api/me", { headers: cookie }, env)).json()) as { orgs: { name: string; goal: string }[] };
+    expect(me.orgs.map((o) => [o.name, o.goal])).toEqual([["freekonomist", ""], ["Brainax", "Больше учеников"]]);
+    const agents = (await (await app.request(`/api/orgs/${id}/agents`, { headers: cookie }, env)).json()) as unknown[];
+    expect(agents).toHaveLength(6);
+    // Another user cannot see the new project.
+    expect((await app.request(`/api/orgs/${id}/agents`, { headers: await as("u-b") }, env)).status).toBe(404);
+  });
+
   it("signs in with the right password only, and /api/me follows the cookie", async () => {
     await signup(owner);
     expect((await login("owner@example.com", "wrong password")).status).toBe(401);

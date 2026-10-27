@@ -6,6 +6,7 @@ import {
   clearLoginFailures,
   countRecentLoginFailures,
   createAccount,
+  createOrg,
   decideApproval,
   findUserByEmail,
   findUserById,
@@ -33,6 +34,7 @@ const MAX_MESSAGE_CHARS = 4000;
 const SESSION_DAYS = 30;
 const MAX_FAILURES = 10;
 const FAILURE_WINDOW_MS = 15 * 60_000;
+const MAX_ORGS_PER_USER = 20;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const app = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -138,6 +140,21 @@ app.get("/api/me", async (c) => {
 });
 
 // ---- Organization data ----
+
+// A signed-in user adds another project; it starts with the same team as at sign-up.
+app.post("/api/orgs", async (c) => {
+  const userId = await currentUser(c);
+  if (!userId) return c.json({ error: "unauthorized" }, 401);
+  const body = await jsonBody(c);
+  if (!body) return c.json({ error: "invalid_body" }, 400);
+  const name = str(body.name);
+  const goal = str(body.goal);
+  if (!name || name.length > 80) return c.json({ error: "invalid_org_name" }, 400);
+  if (goal.length > 200) return c.json({ error: "invalid_goal" }, 400);
+  if ((await listUserOrgs(c.env.DB, userId)).length >= MAX_ORGS_PER_USER) return c.json({ error: "too_many_orgs" }, 409);
+  const id = await createOrg(c.env.DB, userId, { name, goal });
+  return c.json({ id, name, goal, role: "owner" }, 201);
+});
 
 // Signed-in members only. A non-member gets 404, so org ids can't be probed.
 app.use("/api/orgs/:orgId/*", async (c, next) => {

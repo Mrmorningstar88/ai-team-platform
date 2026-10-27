@@ -66,7 +66,7 @@ export async function addOwnerMessage(db: D1Database, orgId: string, body: strin
 // ---- Accounts: users, organizations and sign-in bookkeeping ----
 
 export interface UserRow { id: string; email: string; name: string; password_hash: string | null }
-export interface OrgSummary { id: string; name: string; role: string }
+export interface OrgSummary { id: string; name: string; goal: string; role: string }
 
 /** The team every new organization starts with, in office order. */
 const STARTER_TEAM: { role: string; name: string; autonomy: string }[] = [
@@ -88,10 +88,26 @@ export async function findUserById(db: D1Database, id: string): Promise<Omit<Use
 
 export async function listUserOrgs(db: D1Database, userId: string): Promise<OrgSummary[]> {
   const { results } = await db
-    .prepare("SELECT o.id, o.name, m.role FROM memberships m JOIN orgs o ON o.id = m.org_id WHERE m.user_id = ? ORDER BY o.created_at, o.id")
+    // rowid is insertion order, so projects keep the order they were added in.
+    .prepare("SELECT o.id, o.name, o.goal, m.role FROM memberships m JOIN orgs o ON o.id = m.org_id WHERE m.user_id = ? ORDER BY o.rowid")
     .bind(userId)
     .all<OrgSummary>();
   return results;
+}
+
+/** Statements that create an organization owned by `userId`, with its starter team. */
+function orgStatements(db: D1Database, orgId: string, userId: string, org: { name: string; goal: string }): D1PreparedStatement[] {
+  return [
+    db.prepare("INSERT INTO orgs (id, name, goal) VALUES (?, ?, ?)").bind(orgId, org.name, org.goal),
+    db.prepare("INSERT INTO memberships (org_id, user_id, role) VALUES (?, ?, 'owner')").bind(orgId, userId),
+    // One second apart, so listAgents (ORDER BY created_at) keeps office order.
+    ...STARTER_TEAM.map((a, i) =>
+      db
+        .prepare("INSERT INTO agents (id, org_id, role, name, autonomy, created_at) VALUES (?, ?, ?, ?, ?, datetime('now', ?))")
+        .bind(crypto.randomUUID(), orgId, a.role, a.name, a.autonomy, `+${i} seconds`),
+    ),
+    db.prepare("INSERT INTO audit_log (id, org_id, actor, action) VALUES (?, ?, ?, 'org:created')").bind(crypto.randomUUID(), orgId, `user:${userId}`),
+  ];
 }
 
 /**
@@ -108,15 +124,7 @@ export async function createAccount(
   try {
     await db.batch([
       db.prepare("INSERT INTO users (id, email, name, password_hash) VALUES (?, ?, ?, ?)").bind(userId, input.email, input.name, input.passwordHash),
-      db.prepare("INSERT INTO orgs (id, name) VALUES (?, ?)").bind(orgId, input.orgName),
-      db.prepare("INSERT INTO memberships (org_id, user_id, role) VALUES (?, ?, 'owner')").bind(orgId, userId),
-      // One second apart, so listAgents (ORDER BY created_at) keeps office order.
-      ...STARTER_TEAM.map((a, i) =>
-        db
-          .prepare("INSERT INTO agents (id, org_id, role, name, autonomy, created_at) VALUES (?, ?, ?, ?, ?, datetime('now', ?))")
-          .bind(crypto.randomUUID(), orgId, a.role, a.name, a.autonomy, `+${i} seconds`),
-      ),
-      db.prepare("INSERT INTO audit_log (id, org_id, actor, action) VALUES (?, ?, ?, 'org:created')").bind(crypto.randomUUID(), orgId, `user:${userId}`),
+      ...orgStatements(db, orgId, userId, { name: input.orgName, goal: "" }),
     ]);
   } catch (e) {
     // Two sign-ups racing for one email: the UNIQUE constraint decides.
@@ -124,6 +132,13 @@ export async function createAccount(
     throw e;
   }
   return { userId, orgId };
+}
+
+/** Adds another project (organization) for an existing user, with its starter team. */
+export async function createOrg(db: D1Database, userId: string, org: { name: string; goal: string }): Promise<string> {
+  const orgId = crypto.randomUUID();
+  await db.batch(orgStatements(db, orgId, userId, org));
+  return orgId;
 }
 
 export async function countRecentLoginFailures(db: D1Database, email: string, sinceMs: number): Promise<number> {

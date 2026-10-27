@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { getMe, logout, type Me } from "./api";
+import { getMe, logout, type Me, type Org } from "./api";
+import { ProjectTabs } from "./components/ProjectTabs";
 import { DEMO_APPROVALS } from "./demo";
 import { Approvals } from "./screens/Approvals";
 import { Auth } from "./screens/Auth";
@@ -56,8 +57,24 @@ export function App() {
   );
 }
 
+const ORG_KEY = "current-project";
+
+function savedOrg(orgs: Org[]): string {
+  let id: string | null = null;
+  try { id = localStorage.getItem(ORG_KEY); } catch { /* storage may be blocked */ }
+  return orgs.some((o) => o.id === id) ? id! : orgs[0]?.id ?? "";
+}
+
 function Workspace({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   const [tab, setTab] = useState<TabId>(tabFromHash);
+  const [orgs, setOrgs] = useState(me.orgs);
+  const [orgId, setOrgId] = useState(() => savedOrg(me.orgs));
+  const org = orgs.find((o) => o.id === orgId) ?? orgs[0];
+
+  function selectOrg(id: string) {
+    setOrgId(id);
+    try { localStorage.setItem(ORG_KEY, id); } catch { /* storage may be blocked */ }
+  }
   const [pending, setPending] = useState(DEMO_APPROVALS.length);
 
   useEffect(() => {
@@ -71,7 +88,7 @@ function Workspace({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       <nav className="nav" aria-label="Разделы">
         <div className="nav-brand">
           <span className="nav-brand-mark" aria-hidden>◎</span>
-          <span>{me.orgs[0]?.name ?? me.user.name}</span>
+          <span>{me.user.name}</span>
         </div>
         {TABS.map((t) => (
           <button
@@ -92,9 +109,15 @@ function Workspace({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         </button>
       </nav>
       <main className="main">
+        <ProjectTabs
+          orgs={orgs}
+          current={org?.id ?? ""}
+          onSelect={selectOrg}
+          onCreated={(o) => { setOrgs((list) => [...list, o]); selectOrg(o.id); }}
+        />
         {/* Keyed by tab so each screen animates in when opened. */}
-        <div className="page" key={tab}>
-          {tab === "office" && <Office />}
+        <div className="page" key={`${tab}-${org?.id}`}>
+          {tab === "office" && org && <Office org={org} />}
           {tab === "chat" && <Chat />}
           {tab === "reports" && <Reports />}
           {tab === "team" && <Team />}
