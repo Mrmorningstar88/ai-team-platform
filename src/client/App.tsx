@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { getMe, logout, type Me, type Org } from "./api";
+import { LogoMark } from "./components/Logo";
 import { ProjectTabs } from "./components/ProjectTabs";
 import { DEMO_APPROVALS } from "./demo";
 import { Approvals } from "./screens/Approvals";
-import { Auth } from "./screens/Auth";
+import { Auth, type Mode } from "./screens/Auth";
+import { Landing } from "./screens/Landing";
 import { Chat } from "./screens/Chat";
 import { Office } from "./screens/Office";
 import { Reports } from "./screens/Reports";
@@ -31,9 +33,24 @@ function resetTokenFromHash(): string | undefined {
   return m?.[1];
 }
 
-/** Shows the sign-in screen until the server confirms a session. */
+const AUTH_HASHES: Record<string, Mode> = { "#login": "login", "#signup": "signup" };
+
+/** Signed-out visitors see the landing page; #login and #signup open the forms. */
+function useSignedOutView(): Mode | "landing" {
+  const read = () => (resetTokenFromHash() ? "reset" : AUTH_HASHES[window.location.hash] ?? "landing");
+  const [view, setView] = useState<Mode | "landing">(read);
+  useEffect(() => {
+    const onHash = () => { setView(read()); window.scrollTo(0, 0); };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  return view;
+}
+
+/** Shows the landing and sign-in screens until the server confirms a session. */
 export function App() {
   const [resetToken] = useState(resetTokenFromHash);
+  const signedOutView = useSignedOutView();
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [notice, setNotice] = useState<string>();
 
@@ -52,7 +69,11 @@ export function App() {
       </div>
     );
   }
-  if (me === null) return <Auth onSignedIn={setMe} notice={notice} resetToken={resetToken} />;
+  if (me === null) {
+    if (signedOutView === "landing" && !notice) return <Landing />;
+    const mode = signedOutView === "landing" ? "login" : signedOutView;
+    return <Auth key={mode} onSignedIn={setMe} notice={notice} resetToken={resetToken} initialMode={mode} />;
+  }
   return (
     <Workspace
       me={me}
@@ -94,7 +115,7 @@ function Workspace({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
     <div className="shell">
       <nav className="nav" aria-label="Разделы">
         <div className="nav-brand">
-          <span className="nav-brand-mark" aria-hidden>◎</span>
+          <LogoMark size={32} />
           <span>{me.user.name}</span>
         </div>
         {TABS.map((t) => (

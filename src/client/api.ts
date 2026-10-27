@@ -63,12 +63,15 @@ export const getMe = () => callMe("GET", "/api/me");
 
 export const login = (email: string, password: string) => callMe("POST", "/api/auth/login", { email, password });
 
-export const signup = (input: { name: string; email: string; password: string; orgName: string }) =>
+export const signup = (input: { name: string; email: string; password: string; orgName: string; promo: string }) =>
   callMe("POST", "/api/auth/signup", input);
 
 export const forgotPassword = (email: string) => call("POST", "/api/auth/forgot", { email });
 
 export const resetPassword = (token: string, password: string) => callMe("POST", "/api/auth/reset", { token, password });
+
+export const sendLead = (lead: { kind: "access" | "enterprise"; name: string; email: string; company: string; message: string }) =>
+  call("POST", "/api/leads", lead);
 
 export async function createOrg(name: string, goal: string): Promise<ApiResult<Org>> {
   const r = await call("POST", "/api/orgs", { name, goal });
@@ -99,6 +102,9 @@ export const ERROR_TEXT: Record<string, string> = {
   invalid_reset_link: "Ссылка устарела или уже использована. Запросите новую.",
   email_not_configured: "Отправка писем ещё не настроена. Напишите администратору.",
   email_failed: "Не получилось отправить письмо. Попробуйте через минуту.",
+  invalid_promo: "Такого промокода нет. Проверьте написание или оставьте заявку на доступ.",
+  too_long: "Сообщение слишком длинное.",
+  try_later: "Сейчас слишком много заявок. Попробуйте через час.",
   network: "Нет связи с сервером. Проверьте интернет и попробуйте снова.",
 };
 
