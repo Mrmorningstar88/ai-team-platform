@@ -85,7 +85,8 @@ const DEFAULT_LEADS_EMAIL = "arutyun@nazaryan.org";
 
 export const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
-app.get("/api/health", (c) => c.json({ ok: true }));
+// `ceo` says whether the CEO chat has a model to answer with; the key itself never leaves the server.
+app.get("/api/health", (c) => c.json({ ok: true, ceo: Boolean(c.env.askCeo || c.env.ANTHROPIC_API_KEY) }));
 
 // Every other route needs the database; create missing tables on first use.
 app.use("/api/*", async (c, next) => {
@@ -444,11 +445,24 @@ app.post("/api/orgs/:orgId/messages", async (c) => {
   if ((await countRecentOwnerMessages(db, orgId, 60)) >= MAX_OWNER_MESSAGES_PER_HOUR) return c.json({ error: "try_later" }, 429);
   const id = await addOwnerMessage(db, orgId, text.trim());
 
-  const ask = c.env.askCeo ?? (c.env.ANTHROPIC_API_KEY ? claudeCeo(c.env.ANTHROPIC_API_KEY) : null);
-  if (!ask) return c.json({ id, reply: null, error: "ceo_not_configured" }, 201);
+  return c.json({ id, ...(await answerOwner(c.env, c.get("userId"), orgId)) }, 201);
+});
 
-  const user = await findUserById(db, c.get("userId"));
-  const org = (await listUserOrgs(db, c.get("userId"))).find((o) => o.id === orgId);
+// Answers the owner's messages that were saved while the CEO couldn't reply (no key yet, or a failed call).
+app.post("/api/orgs/:orgId/messages/answer", async (c) => {
+  const orgId = c.get("orgId");
+  const last = (await listMessages(c.env.DB, orgId, 1)).at(-1);
+  if (last?.author !== "owner") return c.json({ reply: null });
+  return c.json(await answerOwner(c.env, c.get("userId"), orgId));
+});
+
+/** The CEO's reply to the chat so far, saved to the history; null with the reason when there is none. */
+async function answerOwner(env: Env, userId: string, orgId: string): Promise<{ reply: { id: string; author: "ceo"; body: string } | null; error?: string }> {
+  const ask = env.askCeo ?? (env.ANTHROPIC_API_KEY ? claudeCeo(env.ANTHROPIC_API_KEY) : null);
+  if (!ask) return { reply: null, error: "ceo_not_configured" };
+  const db = env.DB;
+  const user = await findUserById(db, userId);
+  const org = (await listUserOrgs(db, userId)).find((o) => o.id === orgId);
   const feed = user ? await orgFeed(db, orgId, user) : null;
   const team = feed ? (JSON.parse(feed.payload) as { goal?: string }) : null;
   const system = ceoSystem({ project: org?.name ?? "", goal: org?.goal || team?.goal || "", team });
@@ -456,9 +470,9 @@ app.post("/api/orgs/:orgId/messages", async (c) => {
     console.error("ceo", e);
     return null;
   });
-  if (!answer) return c.json({ id, reply: null, error: "ceo_failed" }, 201);
+  if (!answer) return { reply: null, error: "ceo_failed" };
   const replyId = await addMessage(db, orgId, "ceo", answer);
-  return c.json({ id, reply: { id: replyId, author: "ceo", body: answer } }, 201);
-});
+  return { reply: { id: replyId, author: "ceo", body: answer } };
+}
 
 export default app;

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type PointerEvent } from "react";
-import { getMessages, sendMessage, type ChatMessage, type Org } from "../api";
+import { answerSaved, getMessages, sendMessage, type ChatMessage, type Org } from "../api";
 import { useReducedMotion } from "../components/useReducedMotion";
 
 const MAX_CHARS = 4000;
@@ -55,7 +55,20 @@ export function Chat({ org }: { org: Org }) {
   useEffect(() => {
     let live = true;
     setLines(null);
-    void getMessages(org.id).then((r) => live && setLines(r.ok ? r.data : []));
+    void (async () => {
+      const r = await getMessages(org.id);
+      const list = r.ok ? r.data : [];
+      if (!live) return;
+      setLines(list);
+      // Messages written while the CEO wasn't connected get their answer as soon as the chat opens.
+      if (list.at(-1)?.author !== "owner") return;
+      setWaiting(true);
+      const a = await answerSaved(org.id);
+      if (!live) return;
+      setWaiting(false);
+      const reply = a.ok ? a.data.reply : null;
+      if (reply) setLines((l) => [...(l ?? []), reply]);
+    })();
     return () => { live = false; };
   }, [org.id]);
 
