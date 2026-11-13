@@ -1,0 +1,12 @@
+name: fibbot-test
+on:
+  push:
+    paths: [.github/workflows/fibbot-test.yml, jev-test/fibbot.py]
+  workflow_dispatch:
+jobs:
+  fib:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 jev-test/fibbot.py
