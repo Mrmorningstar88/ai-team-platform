@@ -1,0 +1,24 @@
+name: openbb-test
+# Our trend bot with vs without OpenBB COT data. Paper only.
+on:
+  push:
+    branches: [claude/project-thread-74kf6b]
+    paths: [jev-test/openbb_cot.py, .github/workflows/openbb-test.yml]
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q openbb openbb-cftc pandas numpy requests
+      - run: python jev-test/openbb_cot.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: openbb-cot
+          path: openbb_cot.json
