@@ -1,6 +1,7 @@
 // AI team router. Claude manages the work and hands each piece to the model
 // that is best at it: Perplexity for quick answers and web search, Grok for
-// trading bots and strategies, OpenAI for images. Keys live only in GitHub
+// trading bots and strategies, OpenAI for images, TypeSafe (Jev) for fast
+// structured decisions: pick an option, score, yes/no with a probability. Keys live only in GitHub
 // Actions secrets, so this runs inside the "AI team" workflow.
 //
 // Usage (in the workflow): node scripts/ai-team.ts check
@@ -10,11 +11,11 @@
 import { appendFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-export type Provider = "claude" | "perplexity" | "grok" | "openai";
-export type Task = "manage" | "search" | "trading" | "image" | "text";
+export type Provider = "claude" | "perplexity" | "grok" | "openai" | "typesafe";
+export type Task = "manage" | "search" | "trading" | "image" | "text" | "decide";
 
-export const TASKS: readonly Task[] = ["manage", "search", "trading", "image", "text"];
-export const PROVIDERS: readonly Provider[] = ["claude", "perplexity", "grok", "openai"];
+export const TASKS: readonly Task[] = ["manage", "search", "trading", "image", "text", "decide"];
+export const PROVIDERS: readonly Provider[] = ["claude", "perplexity", "grok", "openai", "typesafe"];
 
 // Arut's split (2026-11-13). Claude is the manager everywhere.
 const ROUTES: Record<Task, Provider> = {
@@ -23,6 +24,7 @@ const ROUTES: Record<Task, Provider> = {
   trading: "grok",
   image: "openai",
   text: "openai",
+  decide: "typesafe",
 };
 
 export function route(task: Task): Provider {
@@ -41,21 +43,31 @@ export function keyFor(provider: Provider, env: Env): string | undefined {
       return pick("PERPLEXITY_API_KEY");
     case "grok":
       return pick("XAI_API_KEY", "XAI_API_KE", "GROK_API_KEY");
+    case "typesafe":
+      return pick("TYPESAFE_API_KEY");
     case "claude":
       return undefined;
   }
 }
 
-const BASE: Record<Exclude<Provider, "claude">, string> = {
+type Remote = Exclude<Provider, "claude">;
+
+const BASE: Record<Remote, string> = {
   openai: "https://api.openai.com/v1",
   perplexity: "https://api.perplexity.ai/v1",
   grok: "https://api.x.ai/v1",
+  typesafe: "https://api.typesafe.ai/v1",
 };
 
-export function modelFor(provider: Exclude<Provider, "claude">, env: Env): string {
+export function modelFor(provider: Remote, env: Env): string {
   // For Perplexity this is the Agent API effort level (fast, low, medium, high, xhigh).
-  const defaults = { openai: "gpt-4.1-mini", perplexity: "fast", grok: "grok-4" };
-  const override = { openai: env.OPENAI_MODEL, perplexity: env.PERPLEXITY_EFFORT, grok: env.XAI_MODEL };
+  const defaults = { openai: "gpt-4.1-mini", perplexity: "fast", grok: "grok-4", typesafe: "jev-latest" };
+  const override = {
+    openai: env.OPENAI_MODEL,
+    perplexity: env.PERPLEXITY_EFFORT,
+    grok: env.XAI_MODEL,
+    typesafe: env.TYPESAFE_MODEL,
+  };
   return override[provider]?.trim() || defaults[provider];
 }
 
@@ -80,7 +92,7 @@ export function redact(text: string, env: Env): string {
     const k = keyFor(p, env);
     if (k && k.length > 8) out = out.split(k).join("***");
   }
-  return out.replace(/\b(sk|xai|pplx)-[A-Za-z0-9_-]{8,}/g, "$1-***");
+  return out.replace(/\b(sk|xai|pplx|ts)-[A-Za-z0-9_-]{8,}/g, "$1-***");
 }
 
 async function call(url: string, key: string, body?: unknown): Promise<any> {
@@ -115,7 +127,42 @@ export function readAgentOutput(data: any): string {
   return sources.length ? `${answer}\n\nИсточники:\n${sources.map((s) => `- ${s}`).join("\n")}` : answer;
 }
 
-export async function chat(provider: Exclude<Provider, "claude">, prompt: string, env: Env): Promise<string> {
+// TypeSafe Jev takes { state, questions } and returns typed answers
+// (choice, score, noul, box). PROMPT must be that JSON; Claude writes it.
+const QUESTION_TYPES = ["choice", "score", "noul", "box"];
+
+export function parseDecision(prompt: string): { state: unknown; questions: Record<string, unknown> } {
+  let data: any;
+  try {
+    data = JSON.parse(prompt);
+  } catch {
+    throw new Error('decide needs JSON: {"state": "...", "questions": {"id": {"type": "noul", "instructions": "..."}}}');
+  }
+  const questions = data?.questions;
+  if (data?.state === undefined || !questions || typeof questions !== "object" || Array.isArray(questions)) {
+    throw new Error("decide needs both state and a questions object");
+  }
+  const ids = Object.keys(questions);
+  if (ids.length === 0 || ids.length > 100) throw new Error("decide needs 1 to 100 questions");
+  for (const id of ids) {
+    const q = questions[id];
+    if (!QUESTION_TYPES.includes(q?.type)) throw new Error(`Question "${id}" type must be one of: ${QUESTION_TYPES.join(", ")}`);
+    if (typeof q.instructions !== "string" && typeof q.instructions !== "object") {
+      throw new Error(`Question "${id}" needs instructions`);
+    }
+  }
+  return { state: data.state, questions };
+}
+
+export async function decide(prompt: string, env: Env): Promise<string> {
+  const key = keyFor("typesafe", env);
+  if (!key) throw new Error("No key for typesafe");
+  const { state, questions } = parseDecision(prompt);
+  const data = await call(`${BASE.typesafe}/systemone`, key, { model: modelFor("typesafe", env), state, questions });
+  return "```json\n" + JSON.stringify(data?.answers ?? data, null, 2) + "\n```";
+}
+
+export async function chat(provider: Exclude<Remote, "typesafe">, prompt: string, env: Env): Promise<string> {
   const key = keyFor(provider, env);
   if (!key) throw new Error(`No key for ${provider}`);
   if (provider === "perplexity") {
@@ -143,9 +190,18 @@ export async function image(prompt: string, env: Env): Promise<Buffer> {
 
 // Smallest call that proves the key works. OpenAI and xAI list models (free);
 // Perplexity has no free endpoint, so it answers one short question.
-export async function check(provider: Exclude<Provider, "claude">, env: Env): Promise<string> {
+export async function check(provider: Remote, env: Env): Promise<string> {
   const key = keyFor(provider, env);
   if (!key) return "нет ключа";
+  if (provider === "typesafe") {
+    const data = await call(`${BASE.typesafe}/systemone`, key, {
+      model: modelFor("typesafe", env),
+      state: "Bitcoin is a cryptocurrency.",
+      questions: { ok: { type: "noul", instructions: "The text is about money" } },
+    });
+    if (typeof data?.answers?.ok?.noul !== "number") throw new Error("unexpected answer");
+    return `работает (${data.model ?? "jev"})`;
+  }
   if (provider === "perplexity") {
     const answer = readAgentOutput(
       await call(`${BASE.perplexity}/agent`, key, { effort: "fast", input: "Reply with the single word OK" }),
@@ -169,7 +225,7 @@ async function main() {
   if (mode === "check") {
     report("| ИИ | Задачи | Ключ |\n| --- | --- | --- |");
     let failed = 0;
-    for (const p of ["perplexity", "grok", "openai"] as const) {
+    for (const p of ["perplexity", "grok", "openai", "typesafe"] as const) {
       const tasks = TASKS.filter((t) => route(t) === p).join(", ");
       const status = await check(p, env).catch((e: Error) => {
         failed++;
@@ -186,6 +242,13 @@ async function main() {
   const { task, provider, prompt } = parseInput(env);
   if (provider === "claude") {
     report("Эту задачу ведёт Claude (управляющий). Другие ИИ не вызывались.");
+    return;
+  }
+  if (provider === "typesafe" || task === "decide") {
+    if (provider !== "typesafe") throw new Error("Decisions are made by typesafe");
+    const answer = await decide(prompt, env);
+    writeFileSync("answer.md", answer);
+    report(`### typesafe (${modelFor("typesafe", env)})\n\n${answer}`);
     return;
   }
   if (task === "image") {

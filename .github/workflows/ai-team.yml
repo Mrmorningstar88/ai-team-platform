@@ -10,14 +10,14 @@ on:
         options: [ask, check]
         default: ask
       task:
-        description: "search → Perplexity, trading → Grok, image/text → OpenAI, manage → Claude"
+        description: "search → Perplexity, trading → Grok, image/text → OpenAI, decide → TypeSafe (JSON), manage → Claude"
         type: choice
-        options: [search, trading, image, text, manage]
+        options: [search, trading, image, text, decide, manage]
         default: search
       provider:
         description: "auto follows the task; or pick one directly"
         type: choice
-        options: [auto, perplexity, grok, openai]
+        options: [auto, perplexity, grok, openai, typesafe]
         default: auto
       prompt:
         description: "What to do"
@@ -46,9 +46,11 @@ jobs:
           PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           XAI_API_KE: ${{ secrets.XAI_API_KE }}
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
           PERPLEXITY_EFFORT: ${{ vars.PERPLEXITY_EFFORT }}
           XAI_MODEL: ${{ vars.XAI_MODEL }}
+          TYPESAFE_MODEL: ${{ vars.TYPESAFE_MODEL }}
           MODE: ${{ inputs.mode || 'check' }}
           TASK: ${{ inputs.task }}
           PROVIDER: ${{ inputs.provider }}
