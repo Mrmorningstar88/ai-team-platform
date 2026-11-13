@@ -1,0 +1,49 @@
+name: jev-test
+# Jev (TypeSafe) on history, paper only (Arut 2026-11-13: "подключим Jev"). The key is the repository secret
+# TYPESAFE_API_KEY and never leaves this job. It runs the same /s AI tester as the terminal (trend-terminal
+# ai_tester.py): SOL daily candles from 2026-06-01, Jev picks long / short / flat each day, compared with holding.
+on:
+  push:
+    branches: [claude/project-thread-74kf6b]
+    paths: [.github/workflows/jev-test.yml]
+  workflow_dispatch:
+    inputs:
+      coin: {description: "BTC | ETH | SOL", required: false, default: "SOL"}
+permissions: {contents: read}
+jobs:
+  jev:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+      TT_HOME: /tmp/tt
+      COIN: ${{ inputs.coin || 'SOL' }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {repository: Mrmorningstar88/trend-terminal, ref: claude/project-thread-74kf6b}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: grep -v telethon requirements.txt > /tmp/req.txt && pip install -q -r /tmp/req.txt
+      - name: One live question to Jev (checks the key)
+        run: |
+          [ -n "$TYPESAFE_API_KEY" ] || { echo "::error::secret TYPESAFE_API_KEY is empty"; exit 1; }
+          python - <<'PY'
+          import jev
+          print("key length", len(jev.api_key()))
+          print("live answer:", jev.ask_side("Candles (day, open, high, low, close, volume): [[1,100,103,99,102,5],[2,102,106,101,105,6]]"))
+          PY
+      - name: Jev on SOL daily history from 2026-06-01
+        run: |
+          python - <<'PY'
+          import json, os, time
+          import ai_tester as t
+          t._run(os.environ["COIN"], ["jev"], "", "2026-06-01", t.MAX_DAYS)
+          d = t.load()
+          print("state:", d.get("state"))
+          print("errors:", json.dumps(d.get("errors"), ensure_ascii=False))
+          print("SUMMARY", json.dumps(d.get("summary"), ensure_ascii=False))
+          rows = d.get("rows") or []
+          print("days", len(rows), "first", rows and time.strftime("%Y-%m-%d", time.gmtime(rows[0]["t"])),
+                "last", rows and time.strftime("%Y-%m-%d", time.gmtime(rows[-1]["t"])))
+          print("picks", {p: sum(1 for r in rows if r.get("jev") == p) for p in ("long", "short", "flat", None)})
+          PY
