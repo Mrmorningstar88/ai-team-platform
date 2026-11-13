@@ -1,0 +1,14 @@
+name: pairs-test
+# Pairs trading ETH/BTC on Binance daily candles, paper only (checking an Instagram claim for Arut, 2026-11-13).
+on:
+  push:
+    branches: [claude/project-thread-74kf6b]
+    paths: [jev-test/pairs.py, .github/workflows/pairs-test.yml]
+permissions: {contents: read}
+jobs:
+  pairs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 jev-test/pairs.py

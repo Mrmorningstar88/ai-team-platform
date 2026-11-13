@@ -5,7 +5,7 @@ name: jev-test
 on:
   push:
     branches: [claude/project-thread-74kf6b]
-    paths: [.github/workflows/jev-test.yml, jev-test/**]
+    paths: [.github/workflows/jev-test.yml, jev-test/run.py]
   workflow_dispatch:
     inputs:
       coin: {description: "BTC | ETH | SOL", required: false, default: "SOL"}
