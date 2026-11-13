@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keyFor, modelFor, parseInput, readAgentOutput, redact, route } from "../scripts/ai-team";
+import { keyFor, modelFor, parseDecision, parseInput, readAgentOutput, redact, route } from "../scripts/ai-team";
 
 describe("AI team router", () => {
   it("follows Arut's split: Claude manages, Perplexity searches, Grok trades, OpenAI draws", () => {
@@ -7,6 +7,7 @@ describe("AI team router", () => {
     expect(route("search")).toBe("perplexity");
     expect(route("trading")).toBe("grok");
     expect(route("image")).toBe("openai");
+    expect(route("decide")).toBe("typesafe");
   });
 
   it("reads the Grok key under the misspelled name too", () => {
@@ -50,5 +51,16 @@ describe("AI team router", () => {
     });
     expect(out).toBe("BTC up\n\nИсточники:\n- https://a.com");
     expect(readAgentOutput({})).toBe("");
+  });
+
+  it("accepts only well-formed TypeSafe decisions", () => {
+    const ok = JSON.stringify({ state: "BTC +5%", questions: { bull: { type: "noul", instructions: "Bullish" } } });
+    expect(parseDecision(ok).questions).toHaveProperty("bull");
+    expect(() => parseDecision("is it bullish?")).toThrow(/needs JSON/);
+    expect(() => parseDecision(JSON.stringify({ questions: {} }))).toThrow(/state/);
+    expect(() => parseDecision(JSON.stringify({ state: "x", questions: {} }))).toThrow(/1 to 100/);
+    expect(() =>
+      parseDecision(JSON.stringify({ state: "x", questions: { a: { type: "essay", instructions: "y" } } })),
+    ).toThrow(/type must be/);
   });
 });
