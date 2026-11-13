@@ -1,64 +1,28 @@
-name: AI team
-# Claude (the manager) calls this to hand a task to Perplexity, Grok or OpenAI.
-# Keys are repository secrets and never leave this job.
+# AI team bridge (Arut 2026-11-13): Claude asks GPT-6 Astra (design, animation, images) with the OpenAI key kept in
+# this repo's secrets. Claude writes ai-team/request.json on its branch and pushes; answers land in ai-team/out/
+# on the same branch and in the run log. Keys are never printed.
+name: ai-team
 on:
+  push:
+    branches-ignore: [main]
+    paths: ["ai-team/request.json"]
   workflow_dispatch:
-    inputs:
-      mode:
-        description: "ask = run a task, check = test every key"
-        type: choice
-        options: [ask, check]
-        default: ask
-      task:
-        description: "search → Perplexity, trading → Grok, image/text → OpenAI, manage → Claude"
-        type: choice
-        options: [search, trading, image, text, manage]
-        default: search
-      provider:
-        description: "auto follows the task; or pick one directly"
-        type: choice
-        options: [auto, perplexity, grok, openai]
-        default: auto
-      prompt:
-        description: "What to do"
-        type: string
-        required: false
-  pull_request:
-    paths:
-      - scripts/ai-team.ts
-      - .github/workflows/ai-team.yml
-permissions:
-  contents: read
-concurrency:
-  group: ai-team-${{ github.run_id }}
+permissions: {contents: write}
+concurrency: {group: "ai-team-${{ github.ref }}", cancel-in-progress: false}
 jobs:
-  run:
+  ask:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Run
+      - name: Ask
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
-          XAI_API_KE: ${{ secrets.XAI_API_KE }}
-          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
-          PERPLEXITY_EFFORT: ${{ vars.PERPLEXITY_EFFORT }}
-          XAI_MODEL: ${{ vars.XAI_MODEL }}
-          MODE: ${{ inputs.mode || 'check' }}
-          TASK: ${{ inputs.task }}
-          PROVIDER: ${{ inputs.provider }}
-          PROMPT: ${{ inputs.prompt }}
-        run: node --experimental-strip-types --no-warnings scripts/ai-team.ts "$MODE"
-      - uses: actions/upload-artifact@v4
-        if: success() && inputs.mode == 'ask'
-        with:
-          name: answer
-          path: |
-            answer.md
-            answer.png
-          if-no-files-found: ignore
+        run: python3 ai-team/ask.py
+      - name: Save the answers on this branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          git config user.name "ai-team" && git config user.email "ai-team@users.noreply.github.com"
+          git add -f ai-team/out && git commit -qm "ai-team: answers" && git pull -q --rebase && git push -q || echo "nothing to save"
