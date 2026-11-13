@@ -47,7 +47,7 @@ jobs:
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           XAI_API_KE: ${{ secrets.XAI_API_KE }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
-          PERPLEXITY_MODEL: ${{ vars.PERPLEXITY_MODEL }}
+          PERPLEXITY_EFFORT: ${{ vars.PERPLEXITY_EFFORT }}
           XAI_MODEL: ${{ vars.XAI_MODEL }}
           MODE: ${{ inputs.mode || 'check' }}
           TASK: ${{ inputs.task }}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keyFor, modelFor, parseInput, redact, route } from "../scripts/ai-team";
+import { keyFor, modelFor, parseInput, readAgentOutput, redact, route } from "../scripts/ai-team";
 
 describe("AI team router", () => {
   it("follows Arut's split: Claude manages, Perplexity searches, Grok trades, OpenAI draws", () => {
@@ -30,7 +30,8 @@ describe("AI team router", () => {
   });
 
   it("lets repo variables override models", () => {
-    expect(modelFor("perplexity", {})).toBe("sonar");
+    expect(modelFor("perplexity", {})).toBe("fast");
+    expect(modelFor("perplexity", { PERPLEXITY_EFFORT: "high" })).toBe("high");
     expect(modelFor("grok", { XAI_MODEL: "grok-4-fast" })).toBe("grok-4-fast");
   });
 
@@ -38,5 +39,16 @@ describe("AI team router", () => {
     const env = { OPENAI_API_KEY: "sk-secretsecret123", XAI_API_KE: "xai-anothersecret99" };
     const out = redact("bad key sk-secretsecret123 and xai-anothersecret99 and pplx-zzzzzzzzzzzz", env);
     expect(out).not.toMatch(/secret|zzzz/);
+  });
+
+  it("reads Perplexity Agent API answers with sources", () => {
+    const out = readAgentOutput({
+      output: [
+        { type: "search_results", results: [{ url: "https://a.com" }, { url: "https://a.com" }, { url: 5 }] },
+        { type: "message", content: [{ type: "output_text", text: "BTC up" }] },
+      ],
+    });
+    expect(out).toBe("BTC up\n\nИсточники:\n- https://a.com");
+    expect(readAgentOutput({})).toBe("");
   });
 });

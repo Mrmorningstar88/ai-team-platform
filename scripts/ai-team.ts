@@ -48,13 +48,14 @@ export function keyFor(provider: Provider, env: Env): string | undefined {
 
 const BASE: Record<Exclude<Provider, "claude">, string> = {
   openai: "https://api.openai.com/v1",
-  perplexity: "https://api.perplexity.ai",
+  perplexity: "https://api.perplexity.ai/v1",
   grok: "https://api.x.ai/v1",
 };
 
 export function modelFor(provider: Exclude<Provider, "claude">, env: Env): string {
-  const defaults = { openai: "gpt-4.1-mini", perplexity: "sonar", grok: "grok-4" };
-  const override = { openai: env.OPENAI_MODEL, perplexity: env.PERPLEXITY_MODEL, grok: env.XAI_MODEL };
+  // For Perplexity this is the Agent API effort level (fast, low, medium, high, xhigh).
+  const defaults = { openai: "gpt-4.1-mini", perplexity: "fast", grok: "grok-4" };
+  const override = { openai: env.OPENAI_MODEL, perplexity: env.PERPLEXITY_EFFORT, grok: env.XAI_MODEL };
   return override[provider]?.trim() || defaults[provider];
 }
 
@@ -94,16 +95,37 @@ async function call(url: string, key: string, body?: unknown): Promise<any> {
   return text ? JSON.parse(text) : {};
 }
 
+// Perplexity retired Sonar chat completions (2026-09-27); its Agent API takes
+// `input` + `effort` and returns typed `output` items (message, search_results).
+export function readAgentOutput(data: any): string {
+  const items: any[] = Array.isArray(data?.output) ? data.output : [];
+  const text = items
+    .filter((i) => i?.type === "message")
+    .flatMap((i) => (Array.isArray(i.content) ? i.content : []))
+    .filter((c: any) => c?.type === "output_text" && typeof c.text === "string")
+    .map((c: any) => c.text as string)
+    .join("\n");
+  const urls = items
+    .filter((i) => i?.type === "search_results")
+    .flatMap((i) => (Array.isArray(i.results) ? i.results : []))
+    .map((r: any) => r?.url)
+    .filter((u: unknown): u is string => typeof u === "string");
+  const answer = text || (typeof data?.output_text === "string" ? data.output_text : "");
+  const sources = [...new Set(urls)].slice(0, 10);
+  return sources.length ? `${answer}\n\nИсточники:\n${sources.map((s) => `- ${s}`).join("\n")}` : answer;
+}
+
 export async function chat(provider: Exclude<Provider, "claude">, prompt: string, env: Env): Promise<string> {
   const key = keyFor(provider, env);
   if (!key) throw new Error(`No key for ${provider}`);
+  if (provider === "perplexity") {
+    return readAgentOutput(await call(`${BASE.perplexity}/agent`, key, { effort: modelFor("perplexity", env), input: prompt }));
+  }
   const data = await call(`${BASE[provider]}/chat/completions`, key, {
     model: modelFor(provider, env),
     messages: [{ role: "user", content: prompt }],
   });
-  const answer: string = data?.choices?.[0]?.message?.content ?? "";
-  const sources: string[] = Array.isArray(data?.citations) ? data.citations : [];
-  return sources.length ? `${answer}\n\nИсточники:\n${sources.map((s) => `- ${s}`).join("\n")}` : answer;
+  return data?.choices?.[0]?.message?.content ?? "";
 }
 
 export async function image(prompt: string, env: Env): Promise<Buffer> {
@@ -125,12 +147,11 @@ export async function check(provider: Exclude<Provider, "claude">, env: Env): Pr
   const key = keyFor(provider, env);
   if (!key) return "нет ключа";
   if (provider === "perplexity") {
-    await call(`${BASE.perplexity}/chat/completions`, key, {
-      model: modelFor("perplexity", env),
-      messages: [{ role: "user", content: "Reply with OK" }],
-      max_tokens: 5,
-    });
-    return `работает (${modelFor("perplexity", env)})`;
+    const answer = readAgentOutput(
+      await call(`${BASE.perplexity}/agent`, key, { effort: "fast", input: "Reply with the single word OK" }),
+    );
+    if (!answer.trim()) throw new Error("empty answer");
+    return "работает (Agent API)";
   }
   const data = await call(`${BASE[provider]}/models`, key);
   const ids: string[] = (data?.data ?? []).map((m: { id: string }) => m.id);
