@@ -1,0 +1,38 @@
+name: tradingagents-test
+# Paper test of TauricResearch/TradingAgents on BTC/ETH/SOL. No exchange orders.
+on:
+  push:
+    branches: [claude/project-thread-74kf6b]
+    paths: [jev-test/tradingagents_test.py, .github/workflows/tradingagents-test.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [grok, openai]
+        coin: [BTC, ETH, SOL]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q "git+https://github.com/TauricResearch/TradingAgents@9fa1196fffbcfd9de5146d2dd2869df84ab99838"
+      - name: Run
+        env:
+          COIN: ${{ matrix.coin }}
+          MODEL_TAG: ${{ matrix.model }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY || secrets.XAI_API_KE }}
+          XAI_MODEL: ${{ vars.XAI_MODEL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PYTHONUNBUFFERED: "1"
+        run: python jev-test/tradingagents_test.py 2>&1 | grep -v -i 'api_key\|authorization'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ta-${{ matrix.model }}-${{ matrix.coin }}
+          path: ta_*.json
