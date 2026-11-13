@@ -1,0 +1,64 @@
+name: AI team
+# Claude (the manager) calls this to hand a task to Perplexity, Grok or OpenAI.
+# Keys are repository secrets and never leave this job.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "ask = run a task, check = test every key"
+        type: choice
+        options: [ask, check]
+        default: ask
+      task:
+        description: "search → Perplexity, trading → Grok, image/text → OpenAI, manage → Claude"
+        type: choice
+        options: [search, trading, image, text, manage]
+        default: search
+      provider:
+        description: "auto follows the task; or pick one directly"
+        type: choice
+        options: [auto, perplexity, grok, openai]
+        default: auto
+      prompt:
+        description: "What to do"
+        type: string
+        required: false
+  pull_request:
+    paths:
+      - scripts/ai-team.ts
+      - .github/workflows/ai-team.yml
+permissions:
+  contents: read
+concurrency:
+  group: ai-team-${{ github.run_id }}
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          XAI_API_KE: ${{ secrets.XAI_API_KE }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+          PERPLEXITY_EFFORT: ${{ vars.PERPLEXITY_EFFORT }}
+          XAI_MODEL: ${{ vars.XAI_MODEL }}
+          MODE: ${{ inputs.mode || 'check' }}
+          TASK: ${{ inputs.task }}
+          PROVIDER: ${{ inputs.provider }}
+          PROMPT: ${{ inputs.prompt }}
+        run: node --experimental-strip-types --no-warnings scripts/ai-team.ts "$MODE"
+      - uses: actions/upload-artifact@v4
+        if: success() && inputs.mode == 'ask'
+        with:
+          name: answer
+          path: |
+            answer.md
+            answer.png
+          if-no-files-found: ignore
