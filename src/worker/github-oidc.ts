@@ -6,7 +6,7 @@ const ISSUER = "https://token.actions.githubusercontent.com";
 const JWKS_URL = `${ISSUER}/.well-known/jwks`;
 const JWKS_TTL_MS = 60 * 60_000;
 
-export interface GithubClaims { repository: string; ref: string }
+export interface GithubClaims { repository: string; ref: string; ownerId: string }
 export interface Jwks { keys: (JsonWebKey & { kid?: string })[] }
 
 let cached: { jwks: Jwks; at: number } | null = null;
@@ -23,7 +23,7 @@ async function githubJwks(now: number): Promise<Jwks> {
 const b64url = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (ch) => ch.charCodeAt(0));
 const json = (part: string): unknown => JSON.parse(new TextDecoder().decode(b64url(part)));
 
-/** The token's repository and ref, or null when it is not a valid GitHub token for `audience`. */
+/** The token's repository, ref and owner id, or null when it is not a valid GitHub token for `audience`. */
 export async function verifyGithubToken(
   token: string,
   audience: string,
@@ -47,13 +47,18 @@ export async function verifyGithubToken(
     );
     const ok = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, b64url(sig), new TextEncoder().encode(`${h}.${p}`));
     if (!ok) return null;
-    const c = json(p) as { iss?: string; aud?: string | string[]; exp?: number; nbf?: number; repository?: string; ref?: string };
+    const c = json(p) as {
+      iss?: string; aud?: string | string[]; exp?: number; nbf?: number; repository?: string; ref?: string;
+      repository_owner_id?: string | number;
+    };
     const auds = Array.isArray(c.aud) ? c.aud : [c.aud];
     const sec = now / 1000;
     if (c.iss !== ISSUER || !auds.includes(audience)) return null;
     if (typeof c.exp !== "number" || c.exp < sec || (typeof c.nbf === "number" && c.nbf > sec + 60)) return null;
     if (typeof c.repository !== "string" || typeof c.ref !== "string") return null;
-    return { repository: c.repository, ref: c.ref };
+    // GitHub's numeric account id: unlike the name, it can't be taken over by renaming or re-creating an account.
+    const ownerId = typeof c.repository_owner_id === "number" || typeof c.repository_owner_id === "string" ? String(c.repository_owner_id) : "";
+    return { repository: c.repository, ref: c.ref, ownerId };
   } catch {
     return null;
   }

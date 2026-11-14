@@ -280,6 +280,7 @@ describe("team feeds", () => {
       aud: "tamania",
       exp: Math.floor(Date.now() / 1000) + 300,
       repository: "owner/site",
+      repository_owner_id: "34088726",
       ref: "refs/heads/main",
       ...claims,
     };
@@ -310,6 +311,19 @@ describe("team feeds", () => {
     expect((await ingest(feed("ainc"), await token({ exp: 1 }))).status).toBe(401);
     expect((await ingest(feed("ainc"), (await token()).replace(/\.(.)([^.]+)$/, (_, ch: string, rest: string) => `.${ch === "A" ? "B" : "A"}${rest}`))).status).toBe(401);
     expect((await ingest(feed("ainc"), await token())).status).toBe(200);
+  });
+
+  it("refuses a repository of an unknown GitHub account, even with a valid token", async () => {
+    // Anyone can get a GitHub token for our audience from their own repository and name a victim's email in the feed.
+    expect((await ingest(feed("evil"), await token({ repository: "stranger/x", repository_owner_id: "999" }))).status).toBe(403);
+    expect((await ingest(feed("evil"), await token({ repository_owner_id: undefined }))).status).toBe(403);
+    const other = { ...feedEnv, FEED_OWNER_IDS: "999" };
+    const r = await app.request(
+      "/api/ingest/team",
+      { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token({ repository: "client/x", repository_owner_id: 999 })}` }, body: JSON.stringify(feed("client")) },
+      other,
+    );
+    expect(r.status).toBe(200);
   });
 
   it("rejects malformed feeds", async () => {

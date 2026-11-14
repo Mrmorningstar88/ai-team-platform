@@ -59,6 +59,8 @@ export interface Env {
   askCeo?: AskCeo;
   /** Tests inject GitHub's signing keys here. */
   githubJwks?: Jwks;
+  /** Comma-separated GitHub account ids whose repositories may report a team (DEFAULT_FEED_OWNER_IDS when unset). */
+  FEED_OWNER_IDS?: string;
 }
 
 type Vars = { userId: string; orgId: string };
@@ -78,6 +80,12 @@ const MAX_RESETS_PER_HOUR = 3;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** The audience a GitHub Actions job requests its token for when it reports to us. */
 const GITHUB_AUDIENCE = "tamania";
+/**
+ * Any GitHub repository in the world can get a valid token for our audience, and the feed names its owner by email.
+ * So only repositories of known GitHub accounts may report: Arut's (Mrmorningstar88) by default. A client who
+ * connects their own repository later is added to FEED_OWNER_IDS.
+ */
+const DEFAULT_FEED_OWNER_IDS = "34088726";
 const MAX_FEED_BYTES = 100_000;
 /** Built-in settings, so the owner has nothing to configure; Cloudflare variables override them. */
 const DEFAULT_SIGNUP_CODES = "TAMANIA";
@@ -308,6 +316,8 @@ app.post("/api/ingest/team", async (c) => {
   const token = /^Bearer (.+)$/.exec(c.req.header("Authorization") ?? "")?.[1];
   const claims = token ? await verifyGithubToken(token, GITHUB_AUDIENCE, Date.now(), c.env.githubJwks) : null;
   if (!claims || claims.ref !== "refs/heads/main") return c.json({ error: "unauthorized" }, 401);
+  const owners = (c.env.FEED_OWNER_IDS || DEFAULT_FEED_OWNER_IDS).split(",").map((s) => s.trim()).filter(Boolean);
+  if (!owners.includes(claims.ownerId)) return c.json({ error: "forbidden_repository" }, 403);
   const raw = await c.req.text();
   if (raw.length > MAX_FEED_BYTES) return c.json({ error: "too_long" }, 413);
   let body: unknown = null;
