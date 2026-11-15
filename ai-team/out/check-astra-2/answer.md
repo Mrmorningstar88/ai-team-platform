@@ -1,1 +1,0 @@
-I’m ChatGPT, and I’m especially good at turning UI ideas into polished layouts with smooth, purposeful animations.

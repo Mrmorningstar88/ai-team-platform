@@ -1,50 +1,6 @@
 [
- {
-  "id": "clan-wolf",
-  "bot": "image",
-  "size": "1024x1024",
-  "prompt": "Glossy 3D cartoon mascot emblem for a crypto trading clan in a mobile casino game. Main colour bright orange with white and charcoal: a howling wolf head bursting out of an orange shield, glowing white eyes. Shield-shaped crest, chunky toy-like shapes, shiny lacquer and candy plastic, bright saturated colours, strong rim light, playful but fierce, front view, centered, fills 85% of the frame, on a pure flat black background. Absolutely no text, no letters, no numbers, no gold, no metallic gold trim."
- },
- {
-  "id": "clan-bear",
-  "bot": "image",
-  "size": "1024x1024",
-  "prompt": "Glossy 3D cartoon mascot emblem for a crypto trading clan in a mobile casino game. Main colour ice blue and white: a roaring polar bear head on a crystal iceberg shield with frost shards. Shield-shaped crest, chunky toy-like shapes, shiny lacquer and candy plastic, bright saturated colours, strong rim light, playful but fierce, front view, centered, fills 85% of the frame, on a pure flat black background. Absolutely no text, no letters, no numbers, no gold, no metallic gold trim."
- },
- {
-  "id": "clan-fox",
-  "bot": "image",
-  "size": "1024x1024",
-  "prompt": "Glossy 3D cartoon mascot emblem for a crypto trading clan in a mobile casino game. Main colour electric purple and hot pink neon: a cyber fox head with glowing neon stripes on a dark violet shield. Shield-shaped crest, chunky toy-like shapes, shiny lacquer and candy plastic, bright saturated colours, strong rim light, playful but fierce, front view, centered, fills 85% of the frame, on a pure flat black background. Absolutely no text, no letters, no numbers, no gold, no metallic gold trim."
- },
- {
-  "id": "clan-shark",
-  "bot": "image",
-  "size": "1024x1024",
-  "prompt": "Glossy 3D cartoon mascot emblem for a crypto trading clan in a mobile casino game. Main colour teal and aqua: a grinning shark leaping out of a wave on a teal shield, water splashes. Shield-shaped crest, chunky toy-like shapes, shiny lacquer and candy plastic, bright saturated colours, strong rim light, playful but fierce, front view, centered, fills 85% of the frame, on a pure flat black background. Absolutely no text, no letters, no numbers, no gold, no metallic gold trim."
- },
- {
-  "id": "clan-phoenix",
-  "bot": "image",
-  "size": "1024x1024",
-  "prompt": "Glossy 3D cartoon mascot emblem for a crypto trading clan in a mobile casino game. Main colour hot pink and coral: a phoenix with spread flame wings on a pink shield. Shield-shaped crest, chunky toy-like shapes, shiny lacquer and candy plastic, bright saturated colours, strong rim light, playful but fierce, front view, centered, fills 85% of the frame, on a pure flat black background. Absolutely no text, no letters, no numbers, no gold, no metallic gold trim."
- },
- {
-  "id": "clan-viper",
-  "bot": "image",
-  "size": "1024x1024",
-  "prompt": "Glossy 3D cartoon mascot emblem for a crypto trading clan in a mobile casino game. Main colour lime green and black: a coiled viper snake with fangs on a lime shield. Shield-shaped crest, chunky toy-like shapes, shiny lacquer and candy plastic, bright saturated colours, strong rim light, playful but fierce, front view, centered, fills 85% of the frame, on a pure flat black background. Absolutely no text, no letters, no numbers, no gold, no metallic gold trim."
- },
- {
-  "id": "clan-rhino",
-  "bot": "image",
-  "size": "1024x1024",
-  "prompt": "Glossy 3D cartoon mascot emblem for a crypto trading clan in a mobile casino game. Main colour crimson-red and charcoal: a charging armored rhino head on a red shield. Shield-shaped crest, chunky toy-like shapes, shiny lacquer and candy plastic, bright saturated colours, strong rim light, playful but fierce, front view, centered, fills 85% of the frame, on a pure flat black background. Absolutely no text, no letters, no numbers, no gold, no metallic gold trim."
- },
- {
-  "id": "clan-kraken",
-  "bot": "image",
-  "size": "1024x1024",
-  "prompt": "Glossy 3D cartoon mascot emblem for a crypto trading clan in a mobile casino game. Main colour deep violet and magenta: a kraken octopus with tentacles wrapped around a violet shield. Shield-shaped crest, chunky toy-like shapes, shiny lacquer and candy plastic, bright saturated colours, strong rim light, playful but fierce, front view, centered, fills 85% of the frame, on a pure flat black background. Absolutely no text, no letters, no numbers, no gold, no metallic gold trim."
- }
+ {"id": "li-test-image", "bot": "image", "size": "1024x1024",
+  "prompt": "Editorial illustration for a LinkedIn post about crypto markets: on a pure black background, a single bold orange (#FF5A36) line chart falling sharply while a thin grey dotted line labelled by shape only (no text) keeps rising, minimal subtle grid, premium financial magazine look, flat vector style with soft glow. Absolutely no text, no letters, no numbers, no logos, no people."},
+ {"id": "li-test-astra", "bot": "astra", "image_tool": true, "effort": "low",
+  "prompt": "Create one square image for a professional LinkedIn post by a trader and founder of a free markets data platform. Topic: 'Influencers stayed bullish while Bitcoin fell 9%'. Style: pure black background, one accent colour orange #FF5A36, grey secondary, clean editorial data-art, no text, no letters, no numbers, no logos, no people. Then reply with one sentence describing the image."}
 ]
