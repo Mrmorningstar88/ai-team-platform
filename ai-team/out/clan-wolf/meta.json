@@ -1,0 +1,18 @@
+{
+ "usage": {
+  "input_tokens": 115,
+  "input_tokens_details": {
+   "image_tokens": 0,
+   "text_tokens": 115
+  },
+  "output_tokens": 196,
+  "output_tokens_details": {
+   "image_tokens": 196,
+   "text_tokens": 0
+  },
+  "total_tokens": 311
+ },
+ "bot": "image",
+ "ok": true,
+ "seconds": 11.8
+}
