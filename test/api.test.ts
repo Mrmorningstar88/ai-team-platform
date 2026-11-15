@@ -3,15 +3,19 @@ import type { Mail } from "../src/worker/email";
 import { app, type Env } from "../src/worker/index";
 import { signSession, verifySession } from "../src/worker/session";
 import { createTestDb } from "./d1";
+import type { DatabaseSync } from "node:sqlite";
 
 const SECRET = "test-secret";
 
 let env: Env;
+let raw: DatabaseSync;
 
 beforeEach(() => {
-  const { d1, raw } = createTestDb();
+  const db = createTestDb();
+  raw = db.raw;
+  const d1 = db.d1;
   raw.exec(`
-    INSERT INTO users (id, email, name) VALUES ('u-a', 'a@example.com', 'A'), ('u-b', 'b@example.com', 'B');
+    INSERT INTO users (id, email, name, email_verified_ms) VALUES ('u-a', 'a@example.com', 'A', 1), ('u-b', 'b@example.com', 'B', 1);
     INSERT INTO orgs (id, name) VALUES ('org-a', 'A Inc'), ('org-b', 'B Inc');
     INSERT INTO memberships (org_id, user_id) VALUES ('org-a', 'u-a'), ('org-b', 'u-b');
     INSERT INTO agents (id, org_id, role, name) VALUES ('ag-a', 'org-a', 'ceo', 'CEO A'), ('ag-b', 'org-b', 'ceo', 'CEO B');
@@ -96,6 +100,54 @@ describe("messages", () => {
     expect((await send("x".repeat(4001))).status).toBe(400);
     const list = await app.request("/api/orgs/org-a/messages", { headers }, env);
     expect(((await list.json()) as { body: string }[]).map((m) => m.body)).toEqual(["Привет, CEO"]);
+  });
+
+  it("caps owner messages per user across all their projects, not per project", async () => {
+    raw.exec(`INSERT INTO orgs (id, name) VALUES ('org-a2', 'A Two'); INSERT INTO memberships (org_id, user_id) VALUES ('org-a2', 'u-a');`);
+    const insert = raw.prepare("INSERT INTO messages (id, org_id, author, body) VALUES (?, ?, 'owner', 'x')");
+    for (let i = 0; i < 40; i++) insert.run(`m${i}`, i % 2 ? "org-a" : "org-a2");
+    const headers = { ...(await as("u-a")), "Content-Type": "application/json" };
+    const send = (orgId: string) => app.request(`/api/orgs/${orgId}/messages`, { method: "POST", headers, body: JSON.stringify({ body: "ещё" }) }, env);
+    expect((await send("org-a")).status).toBe(429);
+    expect((await send("org-a2")).status).toBe(429);
+    // Another user's limit is their own.
+    const b = await app.request("/api/orgs/org-b/messages", { method: "POST", headers: { ...(await as("u-b")), "Content-Type": "application/json" }, body: JSON.stringify({ body: "привет" }) }, env);
+    expect(b.status).toBe(201);
+  });
+
+  it("makes one model call when the saved message is answered by parallel requests", async () => {
+    raw.exec(`INSERT INTO messages (id, org_id, author, body) VALUES ('m1', 'org-a', 'owner', 'Ты тут?')`);
+    let calls = 0;
+    const e: Env = {
+      ...env,
+      askCeo: async () => {
+        calls++;
+        await new Promise((r) => setTimeout(r, 20));
+        return "Да.";
+      },
+    };
+    const headers = await as("u-a");
+    const answer = () => app.request("/api/orgs/org-a/messages/answer", { method: "POST", headers }, e);
+    const results = (await Promise.all(Array.from({ length: 8 }, async () => (await answer()).json()))) as { reply: { body: string } | null }[];
+    expect(calls).toBe(1);
+    expect(results.filter((r) => r.reply)).toHaveLength(1);
+    const list = (await (await app.request("/api/orgs/org-a/messages", { headers }, e)).json()) as { author: string }[];
+    expect(list.map((m) => m.author)).toEqual(["owner", "ceo"]);
+  });
+
+  it("lets the next answer through after a failed one, and after a stale claim expires", async () => {
+    raw.exec(`INSERT INTO messages (id, org_id, author, body) VALUES ('m1', 'org-a', 'owner', 'Ты тут?')`);
+    let fail = true;
+    const e: Env = { ...env, askCeo: async () => (fail ? null : "Да.") };
+    const headers = await as("u-a");
+    const answer = async () => (await (await app.request("/api/orgs/org-a/messages/answer", { method: "POST", headers }, e)).json()) as { reply: unknown; error?: string };
+    expect((await answer()).error).toBe("ceo_failed");
+    // A claim left by a request that died blocks others until it expires.
+    raw.exec(`INSERT INTO ceo_turns (org_id, until_ms) VALUES ('org-a', ${Date.now() + 60_000})`);
+    fail = false;
+    expect((await answer()).error).toBe("ceo_busy");
+    raw.exec(`UPDATE ceo_turns SET until_ms = 1`);
+    expect((await answer()).reply).toEqual(expect.objectContaining({ body: "Да." }));
   });
 });
 
@@ -202,9 +254,11 @@ describe("password reset", () => {
   it("emails a one-time link that sets a new password and signs in", async () => {
     const { e, outbox, linkToken } = withOutbox();
     await post("/api/auth/signup", owner, e);
+    // The first email is the sign-up's "confirm your email" link.
+    expect(outbox.map((m) => m.subject)).toEqual(["Подтвердите почту"]);
     expect((await post("/api/auth/forgot", { email: "OWNER@example.com" }, e)).status).toBe(200);
-    expect(outbox).toHaveLength(1);
-    expect(outbox[0]!.to).toBe("owner@example.com");
+    expect(outbox).toHaveLength(2);
+    expect(outbox[1]!.to).toBe("owner@example.com");
     const token = linkToken();
     expect(token).not.toBe("");
 
@@ -223,6 +277,7 @@ describe("password reset", () => {
     expect((await post("/api/auth/forgot", { email: "nobody@example.com" }, e)).status).toBe(200);
     expect(outbox).toHaveLength(0);
     await post("/api/auth/signup", owner, e);
+    outbox.length = 0;
     for (let i = 0; i < 5; i++) expect((await post("/api/auth/forgot", { email: owner.email }, e)).status).toBe(200);
     expect(outbox).toHaveLength(3);
   });
@@ -282,6 +337,7 @@ describe("team feeds", () => {
       repository: "owner/site",
       repository_owner_id: "34088726",
       ref: "refs/heads/main",
+      job_workflow_ref: "Mrmorningstar88/arutmain-site/.github/workflows/tamania-sync.yml@refs/heads/main",
       ...claims,
     };
     const head = `${enc({ alg: "RS256", kid: "k1" })}.${enc(body)}`;
@@ -317,13 +373,24 @@ describe("team feeds", () => {
     // Anyone can get a GitHub token for our audience from their own repository and name a victim's email in the feed.
     expect((await ingest(feed("evil"), await token({ repository: "stranger/x", repository_owner_id: "999" }))).status).toBe(403);
     expect((await ingest(feed("evil"), await token({ repository_owner_id: undefined }))).status).toBe(403);
-    const other = { ...feedEnv, FEED_OWNER_IDS: "999" };
+    const other = { ...feedEnv, FEED_OWNER_IDS: "999", FEED_WORKFLOWS: "client/x/.github/workflows/sync.yml@refs/heads/main" };
+    const t = await token({ repository: "client/x", repository_owner_id: 999, job_workflow_ref: "client/x/.github/workflows/sync.yml@refs/heads/main" });
     const r = await app.request(
       "/api/ingest/team",
-      { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token({ repository: "client/x", repository_owner_id: 999 })}` }, body: JSON.stringify(feed("client")) },
+      { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` }, body: JSON.stringify(feed("client")) },
       other,
     );
     expect(r.status).toBe(200);
+  });
+
+  it("accepts only the known workflow, not any workflow in the owner's repositories", async () => {
+    const wf = (ref: unknown) => token({ job_workflow_ref: ref });
+    expect((await ingest(feed("evil"), await wf("Mrmorningstar88/arutmain-site/.github/workflows/other.yml@refs/heads/main"))).status).toBe(403);
+    expect((await ingest(feed("evil"), await wf("Mrmorningstar88/another-repo/.github/workflows/tamania-sync.yml@refs/heads/main"))).status).toBe(403);
+    expect((await ingest(feed("evil"), await wf("Mrmorningstar88/arutmain-site/.github/workflows/tamania-sync.yml@refs/heads/dev"))).status).toBe(403);
+    expect((await ingest(feed("evil"), await wf(undefined))).status).toBe(403);
+    // GitHub owner and repo names are case-insensitive.
+    expect((await ingest(feed("ainc"), await wf("mrmorningstar88/ArutMain-Site/.github/workflows/tamania-sync.yml@refs/heads/main"))).status).toBe(200);
   });
 
   it("rejects malformed feeds", async () => {
@@ -353,25 +420,44 @@ describe("team feeds", () => {
     expect((await app.request("/api/orgs/org-a/team", { headers: await as("u-b") }, feedEnv)).status).toBe(404);
   });
 
-  it("gives the owner a project for each of their teams on sign-up", async () => {
+  /** Signs up through feedEnv with an outbox; returns the cookie and the token from the confirm-email link. */
+  async function signupWithMail(orgName: string, email = "c@example.com") {
+    const outbox: Mail[] = [];
+    const e: Env = { ...feedEnv, sendMail: async (m) => { outbox.push(m); return true; } };
+    const res = await app.request(
+      "/api/auth/signup",
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: "long-enough", name: "C", orgName, promo: "EARLY" }) },
+      e,
+    );
+    const verifyToken = /#verify=([\w-]+)/.exec(outbox.at(-1)?.text ?? "")?.[1] ?? "";
+    return { res, cookie: { Cookie: res.headers.get("Set-Cookie")!.split(";")[0] ?? "" }, verifyToken, outbox };
+  }
+  const verify = (token: string) =>
+    app.request("/api/auth/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) }, feedEnv);
+  const meOf = async (cookie: Record<string, string>) =>
+    (await (await app.request("/api/me", { headers: cookie }, feedEnv)).json()) as { user: { email_verified: boolean }; orgs: { id: string; name: string }[] };
+
+  it("gives the owner a project for each of their teams once their email is confirmed", async () => {
     const t = await token();
     await ingest(feed("freekonomist", { owner_email: "c@example.com" }), t);
     await ingest(feed("brainax", { owner_email: "c@example.com" }), t);
-    const signup = await app.request(
-      "/api/auth/signup",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: "c@example.com", password: "long-enough", name: "C", orgName: "Freekonomist.com", promo: "EARLY" }),
-      },
-      feedEnv,
-    );
+    const { res: signup, cookie, verifyToken, outbox } = await signupWithMail("Freekonomist.com");
     expect(signup.status).toBe(201);
-    const { orgs } = (await signup.json()) as { orgs: { id: string; name: string }[] };
+    // Anyone could sign up with the feed's email, so nothing is linked before the inbox is proven.
+    const before = (await signup.json()) as { user: { email_verified: boolean }; orgs: { id: string; name: string }[] };
+    expect(before.user.email_verified).toBe(false);
+    expect(before.orgs.map((o) => o.name)).toEqual(["Freekonomist.com"]);
+    expect(await (await app.request(`/api/orgs/${before.orgs[0]!.id}/team`, { headers: cookie }, feedEnv)).json()).toEqual({ feed: null, available: [] });
+    expect(outbox[0]!.to).toBe("c@example.com");
+
+    expect((await verify("made-up")).status).toBe(400);
+    expect((await verify(verifyToken)).status).toBe(200);
+    expect((await verify(verifyToken)).status).toBe(400);
+    const { user, orgs } = await meOf(cookie);
+    expect(user.email_verified).toBe(true);
     expect(orgs.map((o) => o.name)).toEqual(["Freekonomist.com", "Brainax"]);
 
     // Each project shows its own team, and signing in again adds nothing twice.
-    const cookie = { Cookie: signup.headers.get("Set-Cookie")!.split(";")[0] ?? "" };
     for (const [i, project] of ["freekonomist", "brainax"].entries()) {
       const team = (await (await app.request(`/api/orgs/${orgs[i]!.id}/team`, { headers: cookie }, feedEnv)).json()) as { feed: { project: string } };
       expect(team.feed.project).toBe(project);
@@ -386,18 +472,35 @@ describe("team feeds", () => {
 
   it("treats a short project name as the start of the team's name", async () => {
     await ingest(feed("freekonomist", { owner_email: "c@example.com" }), await token());
+    const { cookie, verifyToken } = await signupWithMail("free");
+    await verify(verifyToken);
+    // It takes the team's full name, since "free" was only its start.
+    expect((await meOf(cookie)).orgs.map((o) => o.name)).toEqual(["Freekonomist"]);
+  });
+
+  it("never links or offers a feed to an unconfirmed email, and a password reset confirms it", async () => {
+    await ingest(feed("freekonomist", { owner_email: "c@example.com" }), await token());
+    // Without email settings no link is sent at all.
     const signup = await app.request(
       "/api/auth/signup",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: "c@example.com", password: "long-enough", name: "C", orgName: "free", promo: "EARLY" }),
-      },
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: "c@example.com", password: "long-enough", name: "C", orgName: "Freekonomist", promo: "EARLY" }) },
       feedEnv,
     );
-    const { orgs } = (await signup.json()) as { orgs: { name: string }[] };
-    // It takes the team's full name, since "free" was only its start.
-    expect(orgs.map((o) => o.name)).toEqual(["Freekonomist"]);
+    const cookie = { Cookie: signup.headers.get("Set-Cookie")!.split(";")[0] ?? "", "Content-Type": "application/json" };
+    const { orgs } = (await signup.json()) as { orgs: { id: string }[] };
+    const orgId = orgs[0]!.id;
+    expect(await (await app.request(`/api/orgs/${orgId}/team`, { headers: cookie }, feedEnv)).json()).toEqual({ feed: null, available: [] });
+    const link = await app.request(`/api/orgs/${orgId}/team`, { method: "POST", headers: cookie, body: JSON.stringify({ feed_id: "owner/site#freekonomist" }) }, feedEnv);
+    expect(link.status).toBe(404);
+
+    const outbox: Mail[] = [];
+    const e: Env = { ...feedEnv, sendMail: async (m) => { outbox.push(m); return true; } };
+    const post = (path: string, body: object) => app.request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, e);
+    await post("/api/auth/forgot", { email: "c@example.com" });
+    const resetToken = /#reset=([\w-]+)/.exec(outbox.at(-1)?.text ?? "")?.[1] ?? "";
+    expect((await post("/api/auth/reset", { token: resetToken, password: "new password 1" })).status).toBe(200);
+    const team = (await (await app.request(`/api/orgs/${orgId}/team`, { headers: cookie }, feedEnv)).json()) as { feed: { project: string } };
+    expect(team.feed.project).toBe("freekonomist");
   });
 
   it("lets only the owner rename a project", async () => {

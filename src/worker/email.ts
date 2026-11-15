@@ -31,6 +31,19 @@ export function resetMail(to: string, name: string, link: string): Mail {
   };
 }
 
+export function verifyMail(to: string, name: string, link: string): Mail {
+  const hi = name ? `${name}, здравствуйте!` : "Здравствуйте!";
+  return {
+    to,
+    subject: "Подтвердите почту",
+    text: `${hi}\n\nЧтобы подтвердить почту, откройте ссылку (она действует 3 дня):\n${link}\n\nЕсли вы не регистрировались, просто удалите это письмо.`,
+    html:
+      `<p>${escapeHtml(hi)}</p><p>Чтобы подтвердить почту, нажмите на ссылку. Она действует 3 дня.</p>` +
+      `<p><a href="${escapeHtml(link)}">Подтвердить почту</a></p>` +
+      `<p>Если вы не регистрировались, просто удалите это письмо.</p>`,
+  };
+}
+
 export function leadMail(to: string, lead: { kind: string; name: string; email: string; company: string; message: string }): Mail {
   const title = lead.kind === "enterprise" ? "Заявка на корпоративный тариф" : "Заявка на ранний доступ";
   const lines = [`Имя: ${lead.name}`, `Почта: ${lead.email}`, `Компания: ${lead.company || "—"}`, `Сообщение: ${lead.message || "—"}`];

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getMe, logout, type Me, type Org } from "./api";
+import { errorText, getMe, logout, verifyEmail, type Me, type Org } from "./api";
 import { LogoMark } from "./components/Logo";
 import { ProjectTabs } from "./components/ProjectTabs";
 import { Approvals } from "./screens/Approvals";
@@ -32,11 +32,17 @@ function resetTokenFromHash(): string | undefined {
   return m?.[1];
 }
 
+/** A token from the sign-up email's "confirm your email" link. */
+function verifyTokenFromHash(): string | undefined {
+  return /^#verify=([\w-]+)$/.exec(window.location.hash)?.[1];
+}
+
 const AUTH_HASHES: Record<string, Mode> = { "#login": "login", "#signup": "signup" };
 
 /** Signed-out visitors see the landing page; #login and #signup open the forms. */
 function useSignedOutView(): Mode | "landing" {
-  const read = () => (resetTokenFromHash() ? "reset" : AUTH_HASHES[window.location.hash] ?? "landing");
+  // A signed-out visitor from the confirm link lands on the sign-in form.
+  const read = () => (resetTokenFromHash() ? "reset" : verifyTokenFromHash() ? "login" : AUTH_HASHES[window.location.hash] ?? "landing");
   const [view, setView] = useState<Mode | "landing">(read);
   useEffect(() => {
     const onHash = () => { setView(read()); window.scrollTo(0, 0); };
@@ -51,13 +57,22 @@ export function App() {
   const signedOutView = useSignedOutView();
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [notice, setNotice] = useState<string>();
+  const [verified, setVerified] = useState<string>();
 
   useEffect(() => {
-    void getMe().then((r) => {
+    void (async () => {
+      // Confirm the email first, so the account loads with the teams it now may see.
+      const token = verifyTokenFromHash();
+      if (token) {
+        history.replaceState(null, "", window.location.pathname);
+        const v = await verifyEmail(token);
+        setVerified(v.ok ? "Почта подтверждена." : errorText(v.error));
+      }
+      const r = await getMe();
       if (r.ok) return setMe(r.data);
       if (r.error === "no_database") setNotice("Сервер ещё не подключён к базе данных. Владельцу нужно добавить базу D1 в настройках Cloudflare.");
       setMe(null);
-    });
+    })();
   }, []);
 
   if (me === undefined) {
@@ -70,16 +85,24 @@ export function App() {
   if (me === null) {
     // The landing always stays reachable; a server notice shows on the sign-in form.
     if (signedOutView === "landing") return <Landing />;
-    return <Auth key={signedOutView} onSignedIn={setMe} notice={notice} resetToken={resetTokenFromHash()} initialMode={signedOutView} />;
+    return (
+      <>
+        {verified && <p className="verify-note" role="status">{verified}</p>}
+        <Auth key={signedOutView} onSignedIn={setMe} notice={notice} resetToken={resetTokenFromHash()} initialMode={signedOutView} />
+      </>
+    );
   }
   return (
-    <Workspace
-      me={me}
-      onSignOut={async () => {
-        await logout();
-        setMe(null);
-      }}
-    />
+    <>
+      {verified && <p className="verify-note" role="status">{verified}</p>}
+      <Workspace
+        me={me}
+        onSignOut={async () => {
+          await logout();
+          setMe(null);
+        }}
+      />
+    </>
   );
 }
 

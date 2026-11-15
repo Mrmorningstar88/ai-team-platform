@@ -60,8 +60,23 @@ export async function listMessages(db: D1Database, orgId: string, limit = 50): P
   return results.reverse();
 }
 
-export async function addOwnerMessage(db: D1Database, orgId: string, body: string): Promise<string> {
-  return addMessage(db, orgId, "owner", body);
+/**
+ * Saves the owner's message unless `userId` already wrote `maxPerHour` in the last hour across all
+ * their projects, so more projects don't mean more CEO calls. One statement, so parallel posts can't
+ * slip past the limit. Returns the id, or null when over the limit.
+ */
+export async function addOwnerMessage(db: D1Database, orgId: string, userId: string, body: string, maxPerHour: number): Promise<string | null> {
+  const id = crypto.randomUUID();
+  const res = await db
+    .prepare(
+      `INSERT INTO messages (id, org_id, author, body) SELECT ?, ?, 'owner', ? WHERE (
+         SELECT COUNT(*) FROM messages WHERE author = 'owner' AND created_at > datetime('now', '-60 minutes')
+         AND org_id IN (SELECT org_id FROM memberships WHERE user_id = ?)
+       ) < ?`,
+    )
+    .bind(id, orgId, body, userId, maxPerHour)
+    .run();
+  return res.meta.changes === 1 ? id : null;
 }
 
 export async function addMessage(db: D1Database, orgId: string, author: MessageRow["author"], body: string): Promise<string> {
@@ -70,17 +85,30 @@ export async function addMessage(db: D1Database, orgId: string, author: MessageR
   return id;
 }
 
-export async function countRecentOwnerMessages(db: D1Database, orgId: string, minutes: number): Promise<number> {
-  const row = await db
-    .prepare("SELECT COUNT(*) AS n FROM messages WHERE org_id = ? AND author = 'owner' AND created_at > datetime('now', ?)")
-    .bind(orgId, `-${minutes} minutes`)
-    .first<{ n: number }>();
-  return row?.n ?? 0;
+/**
+ * Claims the CEO's turn in this org: true for exactly one caller, and only while the last message is
+ * the owner's and no other answer is running. A claim expires at `untilMs`, in case its request died.
+ */
+export async function claimCeoTurn(db: D1Database, orgId: string, nowMs: number, untilMs: number): Promise<boolean> {
+  const res = await db
+    .prepare(
+      `INSERT INTO ceo_turns (org_id, until_ms)
+       SELECT ?, ? WHERE (SELECT author FROM messages WHERE org_id = ? ORDER BY rowid DESC LIMIT 1) = 'owner'
+       ON CONFLICT(org_id) DO UPDATE SET until_ms = excluded.until_ms WHERE ceo_turns.until_ms <= ?`,
+    )
+    .bind(orgId, untilMs, orgId, nowMs)
+    .run();
+  return res.meta.changes === 1;
+}
+
+/** Ends a claim made by claimCeoTurn; a newer claim (after this one expired) is left alone. */
+export async function releaseCeoTurn(db: D1Database, orgId: string, untilMs: number): Promise<void> {
+  await db.prepare("DELETE FROM ceo_turns WHERE org_id = ? AND until_ms = ?").bind(orgId, untilMs).run();
 }
 
 // ---- Accounts: users, organizations and sign-in bookkeeping ----
 
-export interface UserRow { id: string; email: string; name: string; password_hash: string | null }
+export interface UserRow { id: string; email: string; name: string; password_hash: string | null; email_verified_ms: number | null }
 export interface OrgSummary { id: string; name: string; goal: string; role: string }
 
 /** The team every new organization starts with, in office order. */
@@ -94,11 +122,11 @@ const STARTER_TEAM: { role: string; name: string; autonomy: string }[] = [
 ];
 
 export async function findUserByEmail(db: D1Database, email: string): Promise<UserRow | null> {
-  return db.prepare("SELECT id, email, name, password_hash FROM users WHERE email = ?").bind(email).first<UserRow>();
+  return db.prepare("SELECT id, email, name, password_hash, email_verified_ms FROM users WHERE email = ?").bind(email).first<UserRow>();
 }
 
 export async function findUserById(db: D1Database, id: string): Promise<Omit<UserRow, "password_hash"> | null> {
-  return db.prepare("SELECT id, email, name FROM users WHERE id = ?").bind(id).first();
+  return db.prepare("SELECT id, email, name, email_verified_ms FROM users WHERE id = ?").bind(id).first();
 }
 
 export async function listUserOrgs(db: D1Database, userId: string): Promise<OrgSummary[]> {
@@ -203,8 +231,33 @@ export async function useReset(db: D1Database, tokenHash: string, passwordHash: 
   const results = await db.batch([
     // Deleting this token first means a second, racing request changes nothing.
     db.prepare("DELETE FROM password_resets WHERE token_hash = ?").bind(tokenHash),
-    db.prepare("UPDATE users SET password_hash = ? WHERE id = ? AND changes() = 1").bind(passwordHash, row.user_id),
+    // The link came to the user's inbox, so it also proves the email is theirs.
+    db.prepare("UPDATE users SET password_hash = ?, email_verified_ms = COALESCE(email_verified_ms, ?) WHERE id = ? AND changes() = 1").bind(passwordHash, nowMs, row.user_id),
     db.prepare("DELETE FROM password_resets WHERE user_id = ?").bind(row.user_id),
+  ]);
+  return results[1]?.meta.changes ? row.user_id : null;
+}
+
+// ---- Email verification links ----
+
+export async function createEmailVerification(db: D1Database, userId: string, tokenHash: string, nowMs: number, ttlMs: number): Promise<void> {
+  await db.batch([
+    db.prepare("INSERT INTO email_verifications (token_hash, user_id, expires_ms, created_ms) VALUES (?, ?, ?, ?)").bind(tokenHash, userId, nowMs + ttlMs, nowMs),
+    db.prepare("DELETE FROM email_verifications WHERE expires_ms < ?").bind(nowMs - 86_400_000),
+  ]);
+}
+
+/** Spends a verification link and marks the email verified. Returns the user id, or null for a bad link. */
+export async function useEmailVerification(db: D1Database, tokenHash: string, nowMs: number): Promise<string | null> {
+  const row = await db
+    .prepare("SELECT user_id FROM email_verifications WHERE token_hash = ? AND expires_ms > ?")
+    .bind(tokenHash, nowMs)
+    .first<{ user_id: string }>();
+  if (!row) return null;
+  const results = await db.batch([
+    db.prepare("DELETE FROM email_verifications WHERE token_hash = ?").bind(tokenHash),
+    db.prepare("UPDATE users SET email_verified_ms = COALESCE(email_verified_ms, ?) WHERE id = ? AND changes() = 1").bind(nowMs, row.user_id),
+    db.prepare("DELETE FROM email_verifications WHERE user_id = ?").bind(row.user_id),
   ]);
   return results[1]?.meta.changes ? row.user_id : null;
 }
@@ -268,33 +321,36 @@ export async function getOrgFeed(db: D1Database, orgId: string): Promise<FeedRow
     .first<FeedRow>();
 }
 
-/** Feeds that name this email as their owner, so only that user can attach them. */
-export async function listOwnerFeeds(db: D1Database, email: string): Promise<Omit<FeedRow, "payload">[]> {
+/** The user's email, only once they proved it is theirs: a feed names its owner by email. */
+const VERIFIED_EMAIL = "(SELECT email FROM users WHERE id = ? AND email_verified_ms IS NOT NULL)";
+
+/** Feeds that name this user's verified email as their owner, so only that user can attach them. */
+export async function listOwnerFeeds(db: D1Database, userId: string): Promise<Omit<FeedRow, "payload">[]> {
   const { results } = await db
-    .prepare("SELECT id, repo, project, updated_ms FROM team_feeds WHERE owner_email = ? ORDER BY project")
-    .bind(email)
+    .prepare(`SELECT id, repo, project, updated_ms FROM team_feeds WHERE owner_email = ${VERIFIED_EMAIL} ORDER BY project`)
+    .bind(userId)
     .all<Omit<FeedRow, "payload">>();
   return results;
 }
 
-/** Attaches a feed to an organization; false when the feed does not belong to `email`. */
-export async function linkOrgFeed(db: D1Database, orgId: string, feedId: string, email: string, nowMs: number): Promise<boolean> {
+/** Attaches a feed to an organization; false when the feed does not name this user's verified email. */
+export async function linkOrgFeed(db: D1Database, orgId: string, feedId: string, userId: string, nowMs: number): Promise<boolean> {
   const res = await db
-    .prepare("INSERT OR REPLACE INTO org_feeds (org_id, feed_id, linked_ms) SELECT ?, id, ? FROM team_feeds WHERE id = ? AND owner_email = ?")
-    .bind(orgId, nowMs, feedId, email)
+    .prepare(`INSERT OR REPLACE INTO org_feeds (org_id, feed_id, linked_ms) SELECT ?, id, ? FROM team_feeds WHERE id = ? AND owner_email = ${VERIFIED_EMAIL}`)
+    .bind(orgId, nowMs, feedId, userId)
     .run();
   return res.meta.changes === 1;
 }
 
-/** Feeds owned by `email` that none of this user's projects shows yet. */
-export async function listUnlinkedOwnerFeeds(db: D1Database, userId: string, email: string): Promise<{ id: string; project: string }[]> {
+/** Feeds owned by the user's verified email that none of their projects shows yet. */
+export async function listUnlinkedOwnerFeeds(db: D1Database, userId: string): Promise<{ id: string; project: string }[]> {
   const { results } = await db
     .prepare(
-      `SELECT f.id, f.project FROM team_feeds f WHERE f.owner_email = ? AND NOT EXISTS (
+      `SELECT f.id, f.project FROM team_feeds f WHERE f.owner_email = ${VERIFIED_EMAIL} AND NOT EXISTS (
          SELECT 1 FROM org_feeds o JOIN memberships m ON m.org_id = o.org_id WHERE o.feed_id = f.id AND m.user_id = ?
        ) ORDER BY f.project`,
     )
-    .bind(email, userId)
+    .bind(userId, userId)
     .all<{ id: string; project: string }>();
   return results;
 }

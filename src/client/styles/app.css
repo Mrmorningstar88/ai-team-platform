@@ -594,3 +594,9 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 /* Any real progress stays visible, however small the share. */
 .gp-fill.started { min-width: 6px; }
 @media (prefers-reduced-motion: reduce) { .gp-fill { transition: none; } }
+
+/* Result of the "confirm your email" link, above the sign-in form or the workspace. */
+.verify-note {
+  margin: 12px 16px 0; padding: 12px 16px; border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text); box-shadow: var(--shadow); text-align: center;
+}
