@@ -19,6 +19,9 @@ class Statement {
     return { results: this.db.prepare(this.sql).all(...this.params) as T[] };
   }
   async run() {
+    return this.runSync();
+  }
+  runSync() {
     const r = this.db.prepare(this.sql).run(...this.params);
     return { meta: { changes: Number(r.changes) } };
   }
@@ -32,11 +35,12 @@ export function createTestDb(): { d1: D1Database; raw: DatabaseSync } {
   const d1 = {
     prepare: (sql: string) => new Statement(raw, sql),
     // Like D1, a batch is one transaction: all statements apply or none do.
+    // It runs without yielding, so parallel requests can't nest transactions.
     async batch(stmts: Statement[]) {
       raw.exec("BEGIN");
       try {
         const out = [];
-        for (const s of stmts) out.push(await s.run());
+        for (const s of stmts) out.push(s.runSync());
         raw.exec("COMMIT");
         return out;
       } catch (e) {

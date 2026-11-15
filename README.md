@@ -32,5 +32,5 @@ Cloudflare Pages, проект `ai-team-platform`, подключён к это�
 
 - Сборка: `npm run build`, папка `dist/client`; API отдают Pages Functions из `functions/api`.
 - База: D1 `ai-team-platform`, привязка `DB` в Settings → Bindings. Таблицы и ключ сессий создаются сами при первом запросе.
-- Письма (восстановление пароля) уходят через Resend: секрет `RESEND_API_KEY` в Settings → Variables and secrets, домен tamania.io подтверждён в Resend. Отправитель по умолчанию `noreply@tamania.io`, другой можно задать переменной `MAIL_FROM`.
+- Письма (подтверждение почты и восстановление пароля) уходят через Resend: секрет `RESEND_API_KEY` в Settings → Variables and secrets, домен tamania.io подтверждён в Resend. Отправитель по умолчанию `noreply@tamania.io`, другой можно задать переменной `MAIL_FROM`.
 - Если сборка падает на шаге clone repo («Repository not found»), у приложения Cloudflare в GitHub нет доступа к репозиторию: github.com/settings/installations → Cloudflare Workers and Pages → Repository access.

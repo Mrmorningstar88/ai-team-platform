@@ -8,7 +8,8 @@ export const SCHEMA: string[] = [
     email TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    password_hash TEXT
+    password_hash TEXT,
+    email_verified_ms INTEGER
   )`,
   `CREATE TABLE IF NOT EXISTS orgs (
     id TEXT PRIMARY KEY,
@@ -110,6 +111,29 @@ export const SCHEMA: string[] = [
     feed_id TEXT NOT NULL REFERENCES team_feeds(id) ON DELETE CASCADE,
     linked_ms INTEGER NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS email_verifications (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_ms INTEGER NOT NULL,
+    created_ms INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS email_verifications_user ON email_verifications(user_id)`,
+  `CREATE TABLE IF NOT EXISTS ceo_turns (
+    org_id TEXT PRIMARY KEY REFERENCES orgs(id) ON DELETE CASCADE,
+    until_ms INTEGER NOT NULL
+  )`,
+];
+
+/**
+ * Columns added after their table shipped. CREATE TABLE IF NOT EXISTS can't add them to an existing
+ * database, so each runs as one batch that fails with "duplicate column" once the column is there.
+ */
+export const UPGRADES: string[][] = [
+  [
+    "ALTER TABLE users ADD COLUMN email_verified_ms INTEGER",
+    // Users from before email verification keep access to their feeds (as in migrations/0006).
+    "UPDATE users SET email_verified_ms = CAST(strftime('%s', created_at) AS INTEGER) * 1000 WHERE email_verified_ms IS NULL",
+  ],
 ];
 
 const ready = new WeakSet<D1Database>();
@@ -118,5 +142,12 @@ const ready = new WeakSet<D1Database>();
 export async function ensureSchema(db: D1Database): Promise<void> {
   if (ready.has(db)) return;
   await db.batch(SCHEMA.map((sql) => db.prepare(sql)));
+  for (const stmts of UPGRADES) {
+    try {
+      await db.batch(stmts.map((sql) => db.prepare(sql)));
+    } catch (e) {
+      if (!/duplicate column/i.test(String(e))) throw e;
+    }
+  }
   ready.add(db);
 }

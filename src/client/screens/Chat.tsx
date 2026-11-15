@@ -30,6 +30,7 @@ const ERROR_NOTE: Record<string, string> = {
   ceo_not_configured: "CEO ещё не подключён: сообщение сохранено, ответ придёт после подключения.",
   ceo_failed: "CEO не смог ответить. Ваше сообщение сохранено, отправьте вопрос ещё раз.",
   try_later: "Слишком много сообщений за час. Попробуйте чуть позже.",
+  ceo_busy: "CEO уже отвечает на предыдущее сообщение. Обновите чат через минуту.",
 };
 
 interface Line extends ChatMessage { note?: boolean }

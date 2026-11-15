@@ -70,6 +70,8 @@ export const forgotPassword = (email: string) => call("POST", "/api/auth/forgot"
 
 export const resetPassword = (token: string, password: string) => callMe("POST", "/api/auth/reset", { token, password });
 
+export const verifyEmail = (token: string) => call("POST", "/api/auth/verify", { token });
+
 export const sendLead = (lead: { kind: "access" | "enterprise"; name: string; email: string; company: string; message: string }) =>
   call("POST", "/api/leads", lead);
 
@@ -143,6 +145,7 @@ export const ERROR_TEXT: Record<string, string> = {
   too_many_attempts: "Слишком много попыток. Подождите 15 минут и попробуйте снова.",
   no_database: "Сервер ещё не подключён к базе данных. Владельцу нужно добавить базу D1 в настройках Cloudflare.",
   invalid_reset_link: "Ссылка устарела или уже использована. Запросите новую.",
+  invalid_verify_link: "Ссылка для подтверждения почты устарела или уже использована. Подтвердить почту можно и через «Забыли пароль?».",
   email_not_configured: "Отправка писем ещё не настроена. Напишите администратору.",
   email_failed: "Не получилось отправить письмо. Попробуйте через минуту.",
   invalid_promo: "Такого промокода нет. Проверьте написание или оставьте заявку на доступ.",

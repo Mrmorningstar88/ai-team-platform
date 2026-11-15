@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import { leadMail, resendSender, resetMail, type SendMail } from "./email";
+import { leadMail, resendSender, resetMail, verifyMail, type SendMail } from "./email";
 import { ceoSystem, claudeCeo, type AskCeo, type ChatTurn } from "./ceo";
 import { verifyGithubToken, type Jwks } from "./github-oidc";
 import { hashPassword, randomSecret, sha256, verifyPassword } from "./password";
@@ -8,12 +8,13 @@ import {
   addLead,
   addMessage,
   addOwnerMessage,
+  claimCeoTurn,
   clearLoginFailures,
   countRecentLeads,
   countRecentLoginFailures,
-  countRecentOwnerMessages,
   countRecentResets,
   createAccount,
+  createEmailVerification,
   createOrg,
   createReset,
   decideApproval,
@@ -31,8 +32,10 @@ import {
   listUnlinkedOwnerFeeds,
   listUserOrgs,
   recordLoginFailure,
+  releaseCeoTurn,
   renameOrg,
   saveTeamFeed,
+  useEmailVerification,
   useReset,
 } from "./repo";
 import { parseTeamFeed, projectKey } from "./team";
@@ -61,6 +64,8 @@ export interface Env {
   githubJwks?: Jwks;
   /** Comma-separated GitHub account ids whose repositories may report a team (DEFAULT_FEED_OWNER_IDS when unset). */
   FEED_OWNER_IDS?: string;
+  /** Comma-separated workflows ("owner/repo/path@ref") that may report a team (DEFAULT_FEED_WORKFLOWS when unset). */
+  FEED_WORKFLOWS?: string;
 }
 
 type Vars = { userId: string; orgId: string };
@@ -76,6 +81,9 @@ const MAX_ORGS_PER_USER = 20;
 /** A site-wide cap on landing requests, so a bot can't flood the table or the inbox. */
 const MAX_LEADS_PER_HOUR = 60;
 const RESET_TTL_MS = 60 * 60_000;
+const VERIFY_TTL_MS = 3 * 86_400_000;
+/** Longer than one CEO call with its retry and fallback model, so a live answer keeps its claim. */
+const CEO_TURN_MS = 5 * 60_000;
 const MAX_RESETS_PER_HOUR = 3;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** The audience a GitHub Actions job requests its token for when it reports to us. */
@@ -86,6 +94,13 @@ const GITHUB_AUDIENCE = "tamania";
  * connects their own repository later is added to FEED_OWNER_IDS.
  */
 const DEFAULT_FEED_OWNER_IDS = "34088726";
+/** Within those accounts, only this workflow on main may report, not any other workflow in any of their repos. */
+const DEFAULT_FEED_WORKFLOWS = "Mrmorningstar88/arutmain-site/.github/workflows/tamania-sync.yml@refs/heads/main";
+/** GitHub owner and repo names are case-insensitive; the file path and ref are not. */
+function workflowKey(ref: string): string {
+  const [owner = "", repo = "", ...rest] = ref.trim().split("/");
+  return [owner.toLowerCase(), repo.toLowerCase(), ...rest].join("/");
+}
 const MAX_FEED_BYTES = 100_000;
 /** Built-in settings, so the owner has nothing to configure; Cloudflare variables override them. */
 const DEFAULT_SIGNUP_CODES = "TAMANIA";
@@ -148,8 +163,8 @@ const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
  * a project with the same name gets the team, otherwise a new project is made.
  * So an owner who signed up sees all their projects without setting anything up.
  */
-async function adoptOwnFeeds(db: D1Database, user: { id: string; email: string }) {
-  const feeds = await listUnlinkedOwnerFeeds(db, user.id, user.email);
+async function adoptOwnFeeds(db: D1Database, user: { id: string }) {
+  const feeds = await listUnlinkedOwnerFeeds(db, user.id);
   if (feeds.length === 0) return;
   const orgs = await listUserOrgs(db, user.id);
   for (const f of feeds) {
@@ -166,7 +181,7 @@ async function adoptOwnFeeds(db: D1Database, user: { id: string; email: string }
       org = { id: await createOrg(db, user.id, { name, goal: "" }), name, goal: "", role: "owner" };
       orgs.push(org);
     }
-    await linkOrgFeed(db, org.id, f.id, user.email, Date.now());
+    await linkOrgFeed(db, org.id, f.id, user.id, Date.now());
   }
 }
 
@@ -186,7 +201,8 @@ async function me(c: Ctx, userId: string) {
   if (!user) return null;
   await adoptOwnFeeds(c.env.DB, user);
   await completeShortNames(c.env.DB, user.id);
-  return { user, orgs: await listUserOrgs(c.env.DB, userId) };
+  const { email_verified_ms, ...rest } = user;
+  return { user: { ...rest, email_verified: email_verified_ms !== null }, orgs: await listUserOrgs(c.env.DB, userId) };
 }
 
 // ---- Sign-up, sign-in, sign-out ----
@@ -208,6 +224,14 @@ app.post("/api/auth/signup", async (c) => {
 
   const created = await createAccount(c.env.DB, { email, name, orgName, promo, passwordHash: await hashPassword(password) });
   if (!created) return c.json({ error: "email_taken" }, 409);
+  // Team feeds name their owner by email, so they only show up once the email is confirmed.
+  // A failed email doesn't stop sign-up; a password reset link confirms the email too.
+  const send = mailer(c.env);
+  if (send) {
+    const token = randomSecret();
+    await createEmailVerification(c.env.DB, created.userId, await sha256(token), Date.now(), VERIFY_TTL_MS);
+    await send(verifyMail(email, name, `${new URL(c.req.url).origin}/#verify=${token}`)).catch(() => false);
+  }
   await startSession(c, created.userId);
   return c.json(await me(c, created.userId), 201);
 });
@@ -277,6 +301,16 @@ app.post("/api/auth/reset", async (c) => {
   return c.json(await me(c, userId));
 });
 
+// The link from the sign-up email. It only confirms the email; it does not sign anyone in.
+app.post("/api/auth/verify", async (c) => {
+  const body = await jsonBody(c);
+  if (!body) return c.json({ error: "invalid_body" }, 400);
+  const token = str(body.token);
+  if (!token || token.length > 100) return c.json({ error: "invalid_verify_link" }, 400);
+  const userId = await useEmailVerification(c.env.DB, await sha256(token), Date.now());
+  return userId ? c.json({ ok: true }) : c.json({ error: "invalid_verify_link" }, 400);
+});
+
 // Landing page: "no promo code yet" and corporate-plan requests. Public, so input is capped.
 app.post("/api/leads", async (c) => {
   const body = await jsonBody(c);
@@ -318,6 +352,8 @@ app.post("/api/ingest/team", async (c) => {
   if (!claims || claims.ref !== "refs/heads/main") return c.json({ error: "unauthorized" }, 401);
   const owners = (c.env.FEED_OWNER_IDS || DEFAULT_FEED_OWNER_IDS).split(",").map((s) => s.trim()).filter(Boolean);
   if (!owners.includes(claims.ownerId)) return c.json({ error: "forbidden_repository" }, 403);
+  const workflows = (c.env.FEED_WORKFLOWS || DEFAULT_FEED_WORKFLOWS).split(",").map((s) => s.trim()).filter(Boolean).map(workflowKey);
+  if (!claims.workflowRef || !workflows.includes(workflowKey(claims.workflowRef))) return c.json({ error: "forbidden_workflow" }, 403);
   const raw = await c.req.text();
   if (raw.length > MAX_FEED_BYTES) return c.json({ error: "too_long" }, 413);
   let body: unknown = null;
@@ -376,23 +412,22 @@ app.patch("/api/orgs/:orgId", async (c) => {
 app.get("/api/orgs/:orgId/agents", async (c) => c.json(await listAgents(c.env.DB, c.get("orgId"))));
 
 /** The org's team feed; a feed of the owner's whose project matches the org's name is attached on first use. */
-async function orgFeed(db: D1Database, orgId: string, user: { id: string; email: string }) {
+async function orgFeed(db: D1Database, orgId: string, userId: string) {
   const feed = await getOrgFeed(db, orgId);
   if (feed) return feed;
-  const org = (await listUserOrgs(db, user.id)).find((o) => o.id === orgId);
-  const match = org && (await listOwnerFeeds(db, user.email)).find((f) => projectKey(f.project) === projectKey(org.name));
-  return match && (await linkOrgFeed(db, orgId, match.id, user.email, Date.now())) ? getOrgFeed(db, orgId) : null;
+  const org = (await listUserOrgs(db, userId)).find((o) => o.id === orgId);
+  const match = org && (await listOwnerFeeds(db, userId)).find((f) => projectKey(f.project) === projectKey(org.name));
+  return match && (await linkOrgFeed(db, orgId, match.id, userId, Date.now())) ? getOrgFeed(db, orgId) : null;
 }
 
 // The org's live team. A feed whose project matches the org's name is attached on
 // first look, so the owner has nothing to set up; others are offered to attach.
 app.get("/api/orgs/:orgId/team", async (c) => {
   const orgId = c.get("orgId");
-  const user = await findUserById(c.env.DB, c.get("userId"));
-  if (!user) return c.json({ error: "unauthorized" }, 401);
-  const feed = await orgFeed(c.env.DB, orgId, user);
+  const userId = c.get("userId");
+  const feed = await orgFeed(c.env.DB, orgId, userId);
   if (!feed) {
-    const own = await listOwnerFeeds(c.env.DB, user.email);
+    const own = await listOwnerFeeds(c.env.DB, userId);
     return c.json({ feed: null, available: own.map(({ id, repo, project }) => ({ id, repo, project })) });
   }
   // Feeds saved before goals, tasks and progress existed have none of them.
@@ -406,9 +441,7 @@ app.post("/api/orgs/:orgId/team", async (c) => {
   const body = await jsonBody(c);
   const feedId = str(body?.feed_id);
   if (!feedId || feedId.length > 200) return c.json({ error: "invalid_body" }, 400);
-  const user = await findUserById(c.env.DB, c.get("userId"));
-  if (!user) return c.json({ error: "unauthorized" }, 401);
-  const ok = await linkOrgFeed(c.env.DB, c.get("orgId"), feedId, user.email, Date.now());
+  const ok = await linkOrgFeed(c.env.DB, c.get("orgId"), feedId, c.get("userId"), Date.now());
   return ok ? c.json({ ok: true }) : c.json({ error: "not_found" }, 404);
 });
 
@@ -450,10 +483,9 @@ app.post("/api/orgs/:orgId/messages", async (c) => {
   if (typeof text !== "string" || !text.trim() || text.length > MAX_MESSAGE_CHARS) {
     return c.json({ error: "invalid_body" }, 400);
   }
-  const db = c.env.DB;
   const orgId = c.get("orgId");
-  if ((await countRecentOwnerMessages(db, orgId, 60)) >= MAX_OWNER_MESSAGES_PER_HOUR) return c.json({ error: "try_later" }, 429);
-  const id = await addOwnerMessage(db, orgId, text.trim());
+  const id = await addOwnerMessage(c.env.DB, orgId, c.get("userId"), text.trim(), MAX_OWNER_MESSAGES_PER_HOUR);
+  if (!id) return c.json({ error: "try_later" }, 429);
 
   return c.json({ id, ...(await answerOwner(c.env, c.get("userId"), orgId)) }, 201);
 });
@@ -471,18 +503,25 @@ async function answerOwner(env: Env, userId: string, orgId: string): Promise<{ r
   const ask = env.askCeo ?? (env.ANTHROPIC_API_KEY ? claudeCeo(env.ANTHROPIC_API_KEY) : null);
   if (!ask) return { reply: null, error: "ceo_not_configured" };
   const db = env.DB;
-  const user = await findUserById(db, userId);
-  const org = (await listUserOrgs(db, userId)).find((o) => o.id === orgId);
-  const feed = user ? await orgFeed(db, orgId, user) : null;
-  const team = feed ? (JSON.parse(feed.payload) as { goal?: string }) : null;
-  const system = ceoSystem({ project: org?.name ?? "", goal: org?.goal || team?.goal || "", team });
-  const answer = await ask(system, chatTurns(await listMessages(db, orgId, CEO_HISTORY))).catch((e: unknown) => {
-    console.error("ceo", e);
-    return null;
-  });
-  if (!answer) return { reply: null, error: "ceo_failed" };
-  const replyId = await addMessage(db, orgId, "ceo", answer);
-  return { reply: { id: replyId, author: "ceo", body: answer } };
+  // One model call per owner turn: parallel requests that lose the claim get no answer of their own.
+  const now = Date.now();
+  const until = now + CEO_TURN_MS;
+  if (!(await claimCeoTurn(db, orgId, now, until))) return { reply: null, error: "ceo_busy" };
+  try {
+    const org = (await listUserOrgs(db, userId)).find((o) => o.id === orgId);
+    const feed = await orgFeed(db, orgId, userId);
+    const team = feed ? (JSON.parse(feed.payload) as { goal?: string }) : null;
+    const system = ceoSystem({ project: org?.name ?? "", goal: org?.goal || team?.goal || "", team });
+    const answer = await ask(system, chatTurns(await listMessages(db, orgId, CEO_HISTORY))).catch((e: unknown) => {
+      console.error("ceo", e);
+      return null;
+    });
+    if (!answer) return { reply: null, error: "ceo_failed" };
+    const replyId = await addMessage(db, orgId, "ceo", answer);
+    return { reply: { id: replyId, author: "ceo", body: answer } };
+  } finally {
+    await releaseCeoTurn(db, orgId, until);
+  }
 }
 
 export default app;
