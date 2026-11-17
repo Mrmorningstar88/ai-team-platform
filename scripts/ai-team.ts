@@ -175,17 +175,30 @@ export async function chat(provider: Exclude<Remote, "typesafe">, prompt: string
   return data?.choices?.[0]?.message?.content ?? "";
 }
 
+// OpenAI retires image models without notice (gpt-image-1 gone by 2026-11), so
+// try the configured model first, then newer names, skipping "does not exist".
+export const IMAGE_MODELS = ["gpt-image-2", "gpt-image-1.5", "gpt-image-1-mini", "gpt-image-1"];
+
 export async function image(prompt: string, env: Env): Promise<Buffer> {
   const key = keyFor("openai", env);
   if (!key) throw new Error("No key for openai");
-  const data = await call(`${BASE.openai}/images/generations`, key, {
-    model: env.OPENAI_IMAGE_MODEL?.trim() || "gpt-image-1",
-    prompt,
-    size: "1024x1024",
-  });
-  const b64: string | undefined = data?.data?.[0]?.b64_json;
-  if (!b64) throw new Error("OpenAI returned no image");
-  return Buffer.from(b64, "base64");
+  const preferred = env.OPENAI_IMAGE_MODEL?.trim();
+  const models = preferred ? [preferred, ...IMAGE_MODELS.filter((m) => m !== preferred)] : IMAGE_MODELS;
+  const size = env.OPENAI_IMAGE_SIZE?.trim() || "1536x1024";
+  let lastError: unknown;
+  for (const model of models) {
+    try {
+      const data = await call(`${BASE.openai}/images/generations`, key, { model, prompt, size });
+      const b64: string | undefined = data?.data?.[0]?.b64_json;
+      if (!b64) throw new Error("OpenAI returned no image");
+      console.log(`image model: ${model}`);
+      return Buffer.from(b64, "base64");
+    } catch (e) {
+      lastError = e;
+      if (!/does not exist|model_not_found|invalid_value/i.test(String(e))) throw e;
+    }
+  }
+  throw lastError;
 }
 
 // Smallest call that proves the key works. OpenAI and xAI list models (free);

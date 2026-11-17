@@ -51,6 +51,8 @@ jobs:
           PERPLEXITY_EFFORT: ${{ vars.PERPLEXITY_EFFORT }}
           XAI_MODEL: ${{ vars.XAI_MODEL }}
           TYPESAFE_MODEL: ${{ vars.TYPESAFE_MODEL }}
+          OPENAI_IMAGE_MODEL: ${{ vars.OPENAI_IMAGE_MODEL }}
+          OPENAI_IMAGE_SIZE: ${{ vars.OPENAI_IMAGE_SIZE }}
           MODE: ${{ inputs.mode || 'check' }}
           TASK: ${{ inputs.task }}
           PROVIDER: ${{ inputs.provider }}
