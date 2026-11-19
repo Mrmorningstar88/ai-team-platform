@@ -1,0 +1,23 @@
+{
+ "model": "gpt-6-astra",
+ "usage": {
+  "input_tokens": 4062,
+  "input_tokens_details": {
+   "cache_write_tokens": 1761,
+   "cache_write_tokens_details": {
+    "ttl_12h_tokens": 0,
+    "ttl_30m_tokens": 1761
+   },
+   "cached_tokens": 0
+  },
+  "output_tokens": 370,
+  "output_tokens_details": {
+   "reasoning_tokens": 0
+  },
+  "total_tokens": 4432
+ },
+ "images": 1,
+ "bot": "astra",
+ "ok": true,
+ "seconds": 24.2
+}
