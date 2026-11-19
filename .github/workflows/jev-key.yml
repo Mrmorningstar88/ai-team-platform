@@ -1,0 +1,32 @@
+name: jev-key
+# Arut 2026-11-19: the Jev (TypeSafe) key lives in this repository's secrets (TYPESAFE_API_KEY) and GitHub never copies
+# a secret to another repository. This hands it to the Perpetuas server, which accepts it only with GitHub's signed
+# token for this exact workflow (trend-terminal oidc.JEV_KEY) and can do nothing with it but save the Jev key.
+# Runs when jev-key/stamp changes on this branch, or by hand.
+on:
+  push:
+    branches: ["claude/project-thread-vj4y9g"]
+    paths: ["jev-key/stamp"]
+  workflow_dispatch:
+permissions:
+  id-token: write
+  contents: none
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Send the Jev key to the terminal
+        env:
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+        run: |
+          if [ -z "$TYPESAFE_API_KEY" ]; then echo "TYPESAFE_API_KEY is empty in this repository's secrets"; exit 1; fi
+          TOKEN=$(curl -sS --fail -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=perpetuas-jev-key" | jq -r .value)
+          echo "::add-mask::$TOKEN"
+          BODY=$(jq -nc --arg k "$TYPESAFE_API_KEY" '{key: $k}')
+          CODE=$(curl -sS -o reply.json -w '%{http_code}' --max-time 60 -X POST https://terminal.perpetuas.io/api/jev-key \
+            -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" -A "perpetuas-jev-key" --data "$BODY")
+          echo "HTTP $CODE"
+          jq . reply.json 2>/dev/null || head -c 500 reply.json
+          [ "$CODE" = "200" ] && jq -e .saved reply.json > /dev/null
