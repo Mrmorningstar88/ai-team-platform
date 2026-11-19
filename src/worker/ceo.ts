@@ -3,11 +3,42 @@ import Anthropic from "@anthropic-ai/sdk";
 /** One turn of the owner's chat with the CEO, oldest first. */
 export interface ChatTurn { author: "owner" | "ceo"; body: string }
 
-/** Asks the CEO for its next reply; null when the model gave no usable answer. */
-export type AskCeo = (system: string, history: ChatTurn[]) => Promise<string | null>;
+/** A reply and what the call cost, in millionths of a dollar. */
+export interface CeoAnswer { text: string; costMicros: number }
+
+/** Asks the CEO for its next reply; null when the model gave no usable answer. A plain string costs nothing (tests). */
+export type AskCeo = (system: string, history: ChatTurn[]) => Promise<CeoAnswer | string | null>;
 
 export const CEO_MODEL = "claude-opus-5-5";
 const MAX_REPLY_TOKENS = 4000;
+
+/** Dollars per million tokens: [input, output]. A fallback may answer on another model; unknown models count at the dearest price. */
+const PRICES: Record<string, [number, number]> = {
+  "claude-opus-5-5": [4, 20],
+  "claude-opus-5": [5, 25],
+  "claude-opus-4-8": [5, 25],
+  "claude-sonnet-5-5": [2, 10],
+  "claude-sonnet-5": [2, 10],
+};
+const UNKNOWN_PRICE: [number, number] = [10, 50];
+
+export interface Usage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
+}
+
+/** What one call cost in millionths of a dollar ($1 per million tokens is 1 micro per token). Cache writes cost 1.25x, reads 0.1x. */
+export function costMicros(model: string, usage: Usage): number {
+  const [input, output] = PRICES[model] ?? UNKNOWN_PRICE;
+  return (
+    usage.input_tokens * input +
+    (usage.cache_creation_input_tokens ?? 0) * input * 1.25 +
+    (usage.cache_read_input_tokens ?? 0) * input * 0.1 +
+    usage.output_tokens * output
+  );
+}
 
 export interface CeoContext {
   project: string;
@@ -54,6 +85,6 @@ export function claudeCeo(apiKey: string): AskCeo {
     });
     if (response.stop_reason === "refusal") return null;
     const text = response.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n").trim();
-    return text || null;
+    return text ? { text, costMicros: costMicros(response.model, response.usage) } : null;
   };
 }

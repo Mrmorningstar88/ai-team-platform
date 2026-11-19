@@ -85,6 +85,31 @@ export async function addMessage(db: D1Database, orgId: string, author: MessageR
   return id;
 }
 
+/** The org's monthly AI budget and what it has spent this month, in millionths of a dollar. */
+export async function getAiBudget(db: D1Database, orgId: string, month: string): Promise<{ budgetMicros: number; spentMicros: number }> {
+  const row = await db
+    .prepare(
+      `SELECT o.ai_budget_cents * 10000 AS budgetMicros,
+         COALESCE((SELECT spent_micros FROM ai_spend WHERE org_id = o.id AND month = ?), 0) AS spentMicros
+       FROM orgs o WHERE o.id = ?`,
+    )
+    .bind(month, orgId)
+    .first<{ budgetMicros: number; spentMicros: number }>();
+  return row ?? { budgetMicros: 0, spentMicros: 0 };
+}
+
+/** Adds the cost of one AI call to the org's spend for `month` (YYYY-MM). */
+export async function addAiSpend(db: D1Database, orgId: string, month: string, micros: number): Promise<void> {
+  if (!(micros > 0)) return;
+  await db
+    .prepare(
+      `INSERT INTO ai_spend (org_id, month, spent_micros) VALUES (?, ?, ?)
+       ON CONFLICT(org_id, month) DO UPDATE SET spent_micros = ai_spend.spent_micros + excluded.spent_micros`,
+    )
+    .bind(orgId, month, Math.ceil(micros))
+    .run();
+}
+
 /**
  * Claims the CEO's turn in this org: true for exactly one caller, and only while the last message is
  * the owner's and no other answer is running. A claim expires at `untilMs`, in case its request died.

@@ -37,6 +37,8 @@ import {
   saveTeamFeed,
   useEmailVerification,
   useReset,
+  getAiBudget,
+  addAiSpend,
 } from "./repo";
 import { parseTeamFeed, projectKey } from "./team";
 import { ensureSchema } from "./schema";
@@ -512,13 +514,19 @@ async function answerOwner(env: Env, userId: string, orgId: string): Promise<{ r
     const feed = await orgFeed(db, orgId, userId);
     const team = feed ? (JSON.parse(feed.payload) as { goal?: string }) : null;
     const system = ceoSystem({ project: org?.name ?? "", goal: org?.goal || team?.goal || "", team });
+    // Like a business with a budget: once this month's AI money is spent, the CEO stops instead of running up a bill.
+    const month = new Date(now).toISOString().slice(0, 7);
+    const budget = await getAiBudget(db, orgId, month);
+    if (budget.spentMicros >= budget.budgetMicros) return { reply: null, error: "ai_budget_exhausted" };
     const answer = await ask(system, chatTurns(await listMessages(db, orgId, CEO_HISTORY))).catch((e: unknown) => {
       console.error("ceo", e);
       return null;
     });
     if (!answer) return { reply: null, error: "ceo_failed" };
-    const replyId = await addMessage(db, orgId, "ceo", answer);
-    return { reply: { id: replyId, author: "ceo", body: answer } };
+    const { text, costMicros } = typeof answer === "string" ? { text: answer, costMicros: 0 } : answer;
+    await addAiSpend(db, orgId, month, costMicros);
+    const replyId = await addMessage(db, orgId, "ceo", text);
+    return { reply: { id: replyId, author: "ceo", body: text } };
   } finally {
     await releaseCeoTurn(db, orgId, until);
   }
