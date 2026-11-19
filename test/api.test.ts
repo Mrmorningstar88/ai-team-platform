@@ -149,6 +149,24 @@ describe("messages", () => {
     raw.exec(`UPDATE ceo_turns SET until_ms = 1`);
     expect((await answer()).reply).toEqual(expect.objectContaining({ body: "Да." }));
   });
+
+  it("counts what each answer costs and stops the CEO once the monthly budget is spent, per org", async () => {
+    raw.exec(`UPDATE orgs SET ai_budget_cents = 1`); // $0.01 = 10,000 micros
+    let calls = 0;
+    const e: Env = { ...env, askCeo: async () => (calls++, { text: "Да.", costMicros: 6_000 }) };
+    const ask = async (orgId: string, userId: string) => {
+      raw.exec(`INSERT INTO messages (id, org_id, author, body) VALUES ('${crypto.randomUUID()}', '${orgId}', 'owner', '?')`);
+      return (await (await app.request(`/api/orgs/${orgId}/messages/answer`, { method: "POST", headers: await as(userId) }, e)).json()) as { reply: unknown; error?: string };
+    };
+    expect((await ask("org-a", "u-a")).reply).toBeTruthy();
+    expect((await ask("org-a", "u-a")).reply).toBeTruthy(); // 6,000 < 10,000 before this call
+    expect((await ask("org-a", "u-a")).error).toBe("ai_budget_exhausted"); // 12,000 spent
+    expect(calls).toBe(2);
+    const month = new Date().toISOString().slice(0, 7);
+    expect(raw.prepare("SELECT org_id, month, spent_micros FROM ai_spend").all()).toEqual([{ org_id: "org-a", month, spent_micros: 12_000 }]);
+    // Another org's budget is its own.
+    expect((await ask("org-b", "u-b")).reply).toBeTruthy();
+  });
 });
 
 describe("accounts", () => {

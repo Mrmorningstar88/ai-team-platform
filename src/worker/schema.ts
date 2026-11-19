@@ -63,6 +63,12 @@ export const SCHEMA: string[] = [
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
   `CREATE INDEX IF NOT EXISTS messages_org ON messages(org_id, created_at)`,
+  `CREATE TABLE IF NOT EXISTS ai_spend (
+    org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+    month TEXT NOT NULL,
+    spent_micros INTEGER NOT NULL DEFAULT 0 CHECK (spent_micros >= 0),
+    PRIMARY KEY (org_id, month)
+  )`,
   `CREATE TABLE IF NOT EXISTS audit_log (
     id TEXT PRIMARY KEY,
     org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
