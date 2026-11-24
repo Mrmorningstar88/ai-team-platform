@@ -61,7 +61,7 @@ const BASE: Record<Remote, string> = {
 
 export function modelFor(provider: Remote, env: Env): string {
   // For Perplexity this is the Agent API effort level (fast, low, medium, high, xhigh).
-  const defaults = { openai: "gpt-4.1-mini", perplexity: "fast", grok: "grok-4", typesafe: "jev-latest" };
+  const defaults = { openai: "gpt-6.2-astra", perplexity: "fast", grok: "grok-4.7", typesafe: "jev-latest" };
   const override = {
     openai: env.OPENAI_MODEL,
     perplexity: env.PERPLEXITY_EFFORT,
