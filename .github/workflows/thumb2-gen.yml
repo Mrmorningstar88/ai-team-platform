@@ -1,0 +1,21 @@
+# Temporary: OpenAI edit of Arut's poster-style thumbnail. Runs on push to this branch only.
+name: thumb2-gen
+on:
+  push:
+    branches: ["claude/project-thread-wygvep"]
+    paths: [".github/thumb2/prompts.json", ".github/workflows/thumb2-gen.yml"]
+permissions: {contents: write}
+jobs:
+  gen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: bash .github/thumb2/gen.sh
+      - name: Commit
+        if: always()
+        run: |
+          git add -f .github/thumb2/out || true
+          git -c user.name="github-actions[bot]" -c user.email="41898699+github-actions[bot]@users.noreply.github.com" commit -qm "thumb2: OpenAI edits" && git pull -q --rebase origin claude/project-thread-wygvep && git push origin HEAD:claude/project-thread-wygvep || true
